@@ -43,6 +43,44 @@ export default function contribute(client: PluginClientContext) {
     },
   });
 
+  client.addSlashCommand({
+    name: "fork",
+    description: "分叉当前会话：克隆对话上下文到新会话平行探索，主会话不受影响",
+    argumentHint: "[first prompt]",
+    context: "agent",
+    async onSubmit({ args, agent, paseo }) {
+      const page = await paseo.agents
+        .ref(agent.id)
+        .timeline.refetch({ direction: "tail", limit: 200, projection: "canonical" });
+      const lines: string[] = [
+        `以下是你从中接续的原会话「${agent.title ?? agent.id}」的完整对话记录。原会话仍在独立推进，与此会话互不影响。`,
+      ];
+      for (const entry of page.entries) {
+        const item = entry.item;
+        if (item.type === "user_message") {
+          lines.push(`用户: ${item.text}`);
+        } else if (item.type === "assistant_message") {
+          lines.push(`助手: ${item.text}`);
+        }
+      }
+      await paseo.workspaces.ref(agent.workspaceId).agents.create({
+        config: {
+          provider: agent.model ? `${agent.provider}/${agent.model}` : agent.provider,
+        },
+        title: `Fork · ${agent.title ?? agent.id}`,
+        prompt: args.trim() || undefined,
+        attachments: [
+          {
+            type: "text",
+            mimeType: "text/plain",
+            title: `原会话转录 · ${agent.title ?? agent.id}`,
+            text: lines.join("\n\n"),
+          },
+        ],
+      });
+    },
+  });
+
   client.addCommandCenterItem({
     id: "open-btw",
     title: "打开 btw 旁路问答面板",
