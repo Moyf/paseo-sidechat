@@ -1,9 +1,10 @@
 import type { PluginAgentPanelProps } from "@getpaseo/plugin/client";
-import { useAgent, usePaseo, useRpc } from "@getpaseo/plugin/client";
+import { useAgent, usePaseo, useRpc, useSettings } from "@getpaseo/plugin/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { btwAsk, btwClear, btwStatus, type BtwMode, type BtwQuestion } from "../shared/contracts";
-import { t } from "./i18n";
+import { btwSettingsDefinition } from "../shared/settings";
+import { dictionaries, resolveLang } from "./i18n";
 import { MarkdownView } from "./markdown";
 
 interface ModelOption {
@@ -21,6 +22,8 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
   const askRpc = useRpc(btwAsk);
   const statusRpc = useRpc(btwStatus);
   const clearRpc = useRpc(btwClear);
+  const settingsState = useSettings(btwSettingsDefinition);
+  const t = dictionaries[resolveLang(settingsState.status === "ready" ? settingsState.values.language : null)];
 
   const agent = useAgent(agentId, (value) => ({
     title: value.title,

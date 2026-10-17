@@ -1,15 +1,12 @@
-import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
-import { useSettings } from "@getpaseo/plugin/client";
+import { type PluginSurfaceProps, useSettings } from "@getpaseo/plugin/client";
 import { SettingsInput, SettingsSection, SettingsSelect, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
-import { t } from "./i18n";
+import { dictionaries, resolveLang } from "./i18n";
 import { btwSettingsDefinition, colorModeSchema, type ColorMode } from "../shared/settings";
 import { MarkdownView } from "./markdown";
 
 const COLOR_MODES: readonly ColorMode[] = ["default", "accent", "muted", "success", "warning", "danger"];
-
-const PREVIEW_MARKDOWN = t.previewMarkdown;
 
 export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
   const settings = useSettings(btwSettingsDefinition);
@@ -19,6 +16,8 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
 
   const values = settings.status === "ready" ? settings.values : null;
   const ready = settings.status === "ready";
+  const t = dictionaries[resolveLang(values?.language)];
+  const previewMarkdown = t.previewMarkdown;
 
   useEffect(() => {
     if (ready && values) {
@@ -48,7 +47,7 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     [theme, layout.compact],
   );
 
-  const save = (patch: Partial<Record<"autoArchive" | "idleMinutes" | "contextMessages" | "attachToMain" | "headingColor" | "boldColor" | "highlightColor", unknown>>) => {
+  const save = (patch: Partial<Record<"language" | "autoArchive" | "idleMinutes" | "contextMessages" | "attachToMain" | "headingColor" | "boldColor" | "highlightColor", unknown>>) => {
     if (!ready || !values) return;
     void settings.save({ ...values, ...patch } as typeof values, settings.revision);
   };
@@ -73,6 +72,19 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
 
   return (
     <View style={styles.screen}>
+      <SettingsSection title={t.generalSection}>
+        <SettingsSelect
+          label={t.languageLabel}
+          value={values?.language ?? "auto"}
+          options={[
+            { label: t.languageAuto, value: "auto" },
+            { label: "中文", value: "zh" },
+            { label: "English", value: "en" },
+          ]}
+          onValueChange={(value) => save({ language: value })}
+          disabled={!ready}
+        />
+      </SettingsSection>
       <SettingsSection title={t.appearanceSection} info={t.appearanceInfo}>
         {colorSelect(t.headingColor, "headingColor")}
         {colorSelect(t.boldColor, "boldColor")}
@@ -80,7 +92,7 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
         <View>
           <Text style={styles.previewLabel}>{t.preview}</Text>
           <View style={styles.preview}>
-            <MarkdownView markdown={PREVIEW_MARKDOWN} theme={theme} compact={layout.compact} />
+            <MarkdownView markdown={previewMarkdown} theme={theme} compact={layout.compact} />
           </View>
         </View>
       </SettingsSection>

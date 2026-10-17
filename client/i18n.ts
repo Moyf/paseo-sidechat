@@ -117,6 +117,10 @@ const zh = {
   contextInfo: "新线程会读取主会话最近的对话作为背景",
   contextMessagesLabel: "上下文消息条数",
   contextMessagesHint: (range: string) => `${range}之间的整数，超长消息另有字符总量上限`,
+
+  generalSection: "通用",
+  languageLabel: "界面语言",
+  languageAuto: "跟随系统",
 };
 
 const en: typeof zh = {
@@ -204,6 +208,18 @@ const en: typeof zh = {
   contextInfo: "New threads read the main session's recent messages as background",
   contextMessagesLabel: "Context message count",
   contextMessagesHint: (range: string) => `An integer between ${range}; very long messages are capped separately`,
+
+  generalSection: "General",
+  languageLabel: "Interface language",
+  languageAuto: "System default",
 };
 
-export const t = lang === "en" ? en : zh;
+/** Resolve the UI language: an explicit setting wins, otherwise the OS locale. */
+export function resolveLang(setting: string | null | undefined): Lang {
+  if (setting === "zh" || setting === "en") return setting;
+  return getLang();
+}
+
+export const dictionaries: Record<Lang, typeof zh> = { zh, en };
+
+export const t = dictionaries[getLang()];

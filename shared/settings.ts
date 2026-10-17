@@ -7,8 +7,9 @@ export type ColorMode = z.infer<typeof colorModeSchema>;
 export const btwSettingsDefinition = defineSettings({
   id: "btw-settings",
   scope: "host",
-  version: 5,
+  version: 6,
   schema: z.object({
+    language: z.enum(["auto", "zh", "en"]).default("auto"),
     autoArchive: z.boolean().default(false),
     idleMinutes: z.number().int().min(1).max(1440).default(10),
     contextMessages: z.number().int().min(1).max(50).default(8),
