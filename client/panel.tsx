@@ -297,6 +297,14 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
             placeholderTextColor={theme.colors.foregroundMuted}
             multiline
             editable={!hasActive}
+            onKeyPress={(event) => {
+              const nativeEvent = event.nativeEvent as { key?: string; isComposing?: boolean };
+              if (nativeEvent.key !== "Enter" || nativeEvent.isComposing) return;
+              const shiftKey = (event as unknown as { shiftKey?: boolean }).shiftKey === true;
+              if (shiftKey) return;
+              event.preventDefault?.();
+              void submit();
+            }}
           />
           <Pressable
             accessibilityRole="button"
