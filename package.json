@@ -9,6 +9,7 @@
     "index.client.tsx",
     "index.server.ts",
     "index.server.tsx",
+    "assets/",
     "client/",
     "server/",
     "shared/"
