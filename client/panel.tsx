@@ -211,7 +211,7 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
       modelButtonText: { color: theme.colors.foreground, fontSize: layout.compact ? 11 : 12 },
       modelValueText: { flexShrink: 1 },
       modelCaret: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 11 : 12 },
-      pickerAnchor: { position: "relative" as const },
+      pickerAnchor: { position: "relative" as const, marginTop: 6 },
       modelPopover: {
         position: "absolute" as const,
         left: 0,
