@@ -7,7 +7,7 @@ export type ColorMode = z.infer<typeof colorModeSchema>;
 export const btwSettingsDefinition = defineSettings({
   id: "btw-settings",
   scope: "host",
-  version: 4,
+  version: 5,
   schema: z.object({
     autoArchive: z.boolean().default(false),
     idleMinutes: z.number().int().min(1).max(1440).default(10),
@@ -15,7 +15,8 @@ export const btwSettingsDefinition = defineSettings({
     attachToMain: z.boolean().default(true),
     headingColor: colorModeSchema.default("default"),
     boldColor: colorModeSchema.default("default"),
-    highlightColor: colorModeSchema.default("accent"),
+    highlightColor: colorModeSchema.default("default"),
+    highlightBgColor: colorModeSchema.default("accent"),
   }),
   migrate: (values) => values,
 });

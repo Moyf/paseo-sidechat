@@ -150,12 +150,14 @@ function InlineText({
   baseStyle,
   boldColor,
   highlightColor,
+  highlightBgColor,
   surface,
 }: {
   text: string;
   baseStyle: { color: string; fontSize: number };
   boldColor?: string;
   highlightColor: string;
+  highlightBgColor: string;
   surface: string;
 }) {
   const segments = useMemo(() => parseInline(text), [text]);
@@ -169,7 +171,7 @@ function InlineText({
               ? {
                   ...baseStyle,
                   color: highlightColor,
-                  backgroundColor: withAlpha(highlightColor, 0.22, surface),
+                  backgroundColor: withAlpha(highlightBgColor, 0.22, surface),
                 }
               : segment.code
                 ? { ...baseStyle, fontFamily: "monospace", color: baseStyle.color }
@@ -191,7 +193,12 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
   const headingColor = resolveColor(savedColors?.headingColor ?? "default", theme, theme.colors.foreground);
   const boldColor = resolveColor(savedColors?.boldColor ?? "default", theme, theme.colors.foreground);
   const highlightColor = resolveColor(
-    savedColors?.highlightColor ?? "accent",
+    savedColors?.highlightColor ?? "default",
+    theme,
+    theme.colors.foreground,
+  );
+  const highlightBgColor = resolveColor(
+    savedColors?.highlightBgColor ?? "accent",
     theme,
     theme.colors.accent ?? theme.colors.foreground,
   );
@@ -249,7 +256,7 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
             {block.items.map((item, itemIndex) => (
               <Text key={itemIndex} style={styles.listItem}>
                 •{" "}
-                <InlineText text={item} baseStyle={styles.body} boldColor={boldColor} highlightColor={highlightColor} surface={theme.colors.surface1} />
+                <InlineText text={item} baseStyle={styles.body} boldColor={boldColor} highlightColor={highlightColor} highlightBgColor={highlightBgColor} surface={theme.colors.surface1} />
               </Text>
             ))}
           </View>
@@ -260,7 +267,7 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
             {block.items.map((item, itemIndex) => (
               <Text key={itemIndex} style={styles.listItem}>
                 {itemIndex + 1}.{" "}
-                <InlineText text={item} baseStyle={styles.body} boldColor={boldColor} highlightColor={highlightColor} surface={theme.colors.surface1} />
+                <InlineText text={item} baseStyle={styles.body} boldColor={boldColor} highlightColor={highlightColor} highlightBgColor={highlightBgColor} surface={theme.colors.surface1} />
               </Text>
             ))}
           </View>
@@ -268,7 +275,7 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
       default:
         return (
           <Text key={index} style={[styles.body, styles.paragraph]}>
-            <InlineText text={block.text} baseStyle={styles.body} boldColor={boldColor} highlightColor={highlightColor} surface={theme.colors.surface1} />
+            <InlineText text={block.text} baseStyle={styles.body} boldColor={boldColor} highlightColor={highlightColor} highlightBgColor={highlightBgColor} surface={theme.colors.surface1} />
           </Text>
         );
     }

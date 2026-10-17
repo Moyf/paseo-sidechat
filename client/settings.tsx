@@ -56,7 +56,7 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     [theme, layout.compact],
   );
 
-  const save = (patch: Partial<Record<"autoArchive" | "idleMinutes" | "contextMessages" | "attachToMain" | "headingColor" | "boldColor" | "highlightColor", unknown>>) => {
+  const save = (patch: Partial<Record<"autoArchive" | "idleMinutes" | "contextMessages" | "attachToMain" | "headingColor" | "boldColor" | "highlightColor" | "highlightBgColor", unknown>>) => {
     if (!ready || !values) return;
     void settings.save({ ...values, ...patch } as typeof values, settings.revision);
   };
@@ -77,7 +77,7 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     saveTimer.current = setTimeout(() => save({ contextMessages: clamped }), 600);
   };
 
-  const colorSelect = (label: string, field: "headingColor" | "boldColor" | "highlightColor") => (
+  const colorSelect = (label: string, field: "headingColor" | "boldColor" | "highlightColor" | "highlightBgColor") => (
     <SettingsSelect
       label={label}
       value={values?.[field] ?? "default"}
@@ -93,6 +93,7 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
         {colorSelect("标题颜色", "headingColor")}
         {colorSelect("加粗颜色", "boldColor")}
         {colorSelect("高亮颜色", "highlightColor")}
+        {colorSelect("高亮背景色", "highlightBgColor")}
         <View>
           <Text style={styles.previewLabel}>预览</Text>
           <View style={styles.preview}>
