@@ -12,7 +12,7 @@ Paseo plugin: `/btw <question>` — ask a side question from the context of the 
 
 ## How it works
 
-The plugin's daemon-side code reads the main agent's recent timeline messages as context, spawns a short-lived `[btw]`-prefixed temporary agent in the same workspace (plan/read-only mode when available, no tools), streams the answer back to the panel, then archives the temporary agent. The main agent's session and transcript are never written to.
+The plugin's daemon-side code reads the main agent's recent timeline messages as context, spawns a `[btw]`-prefixed temporary agent in the same workspace (plan/read-only mode when available, no tools), streams the answer back to the panel. Follow-ups continue the same temporary agent, so each btw thread keeps its own Q&A history; threads stay open until you press Clear or the plugin/daemon reloads (optional idle auto-archive in the plugin settings, off by default). The main agent's session and transcript are never written to.
 
 ## Development
 

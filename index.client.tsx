@@ -1,5 +1,6 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { BtwPanel } from "./client/panel";
+import { BtwSettingsScreen } from "./client/settings";
 import { btwAsk } from "./shared/contracts";
 
 export default function contribute(client: PluginClientContext) {
@@ -36,6 +37,24 @@ export default function contribute(client: PluginClientContext) {
     onSelect({ openPanel }) {
       openPanel("btw", { location: "explorer" });
     },
+  });
+
+  client.addCommandCenterItem({
+    id: "open-btw-settings",
+    title: "打开 btw 设置",
+    icon: "Settings2",
+    keywords: ["btw", "settings", "设置", "回收"],
+    context: "global",
+    onSelect({ openSettings }) {
+      openSettings("settings");
+    },
+  });
+
+  client.addSettingsScreen({
+    id: "settings",
+    title: "btw 设置",
+    icon: "Settings2",
+    Component: BtwSettingsScreen,
   });
 
   return () => {};

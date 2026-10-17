@@ -1,6 +1,8 @@
 import { useMemo, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import type { PluginTheme } from "@getpaseo/plugin";
+import { useSettings } from "@getpaseo/plugin/client";
+import { btwSettingsDefinition, type ColorMode } from "../shared/settings";
 
 type Segment = { text: string; bold: boolean; code: boolean; highlight: boolean };
 
@@ -126,16 +128,35 @@ function parseBlocks(markdown: string): Block[] {
   return blocks;
 }
 
+function resolveColor(mode: ColorMode, theme: PluginTheme, fallback: string): string {
+  switch (mode) {
+    case "accent":
+      return theme.colors.accent ?? fallback;
+    case "muted":
+      return theme.colors.foregroundMuted;
+    case "success":
+      return theme.colors.statusSuccess;
+    case "warning":
+      return theme.colors.statusWarning;
+    case "danger":
+      return theme.colors.statusDanger;
+    default:
+      return fallback;
+  }
+}
+
 function InlineText({
   text,
   baseStyle,
-  accent,
-  control,
+  boldColor,
+  highlightColor,
+  surface,
 }: {
   text: string;
   baseStyle: { color: string; fontSize: number };
-  accent?: string;
-  control: string;
+  boldColor?: string;
+  highlightColor: string;
+  surface: string;
 }) {
   const segments = useMemo(() => parseInline(text), [text]);
   return (
@@ -147,14 +168,14 @@ function InlineText({
             segment.highlight
               ? {
                   ...baseStyle,
-                  color: accent ?? baseStyle.color,
-                  backgroundColor: withAlpha(accent, 0.22, control),
+                  color: highlightColor,
+                  backgroundColor: withAlpha(highlightColor, 0.22, surface),
                   fontWeight: "600" as const,
                 }
               : segment.code
                 ? { ...baseStyle, fontFamily: "monospace", color: baseStyle.color }
                 : segment.bold
-                  ? { ...baseStyle, fontWeight: "700" as const }
+                  ? { ...baseStyle, color: boldColor ?? baseStyle.color, fontWeight: "700" as const }
                   : baseStyle
           }
         >
@@ -166,6 +187,16 @@ function InlineText({
 }
 
 export function MarkdownView({ markdown, theme, compact }: { markdown: string; theme: PluginTheme; compact: boolean }) {
+  const settings = useSettings(btwSettingsDefinition);
+  const savedColors = settings.status === "ready" ? settings.values : null;
+  const headingColor = resolveColor(savedColors?.headingColor ?? "default", theme, theme.colors.foreground);
+  const boldColor = resolveColor(savedColors?.boldColor ?? "default", theme, theme.colors.foreground);
+  const highlightColor = resolveColor(
+    savedColors?.highlightColor ?? "accent",
+    theme,
+    theme.colors.accent ?? theme.colors.foreground,
+  );
+
   const styles = useMemo(() => {
     const bodySize = compact ? 13 : 14;
     return {
@@ -179,14 +210,14 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
         marginVertical: 6,
       },
       codeText: { color: theme.colors.foreground, fontFamily: "monospace", fontSize: bodySize - 1 },
-      h1: { color: theme.colors.foreground, fontSize: bodySize + 6, fontWeight: "700" as const, marginTop: 8, marginBottom: 4 },
-      h2: { color: theme.colors.foreground, fontSize: bodySize + 4, fontWeight: "700" as const, marginTop: 8, marginBottom: 4 },
-      h3: { color: theme.colors.foreground, fontSize: bodySize + 2, fontWeight: "700" as const, marginTop: 6, marginBottom: 3 },
-      h4: { color: theme.colors.foreground, fontSize: bodySize + 1, fontWeight: "700" as const, marginTop: 6, marginBottom: 3 },
+      h1: { color: headingColor, fontSize: bodySize + 6, fontWeight: "700" as const, marginTop: 8, marginBottom: 4 },
+      h2: { color: headingColor, fontSize: bodySize + 4, fontWeight: "700" as const, marginTop: 8, marginBottom: 4 },
+      h3: { color: headingColor, fontSize: bodySize + 2, fontWeight: "700" as const, marginTop: 6, marginBottom: 3 },
+      h4: { color: headingColor, fontSize: bodySize + 1, fontWeight: "700" as const, marginTop: 6, marginBottom: 3 },
       listItem: { color: theme.colors.foreground, fontSize: bodySize, lineHeight: bodySize * 1.55, marginLeft: 12, marginTop: 2 },
       paragraph: { marginTop: 2, marginBottom: 6 },
     };
-  }, [theme, compact]);
+  }, [theme, compact, headingColor]);
 
   const blocks = useMemo(() => parseBlocks(markdown), [markdown]);
 
@@ -219,7 +250,7 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
             {block.items.map((item, itemIndex) => (
               <Text key={itemIndex} style={styles.listItem}>
                 •{" "}
-                <InlineText text={item} baseStyle={styles.body} accent={theme.colors.accent} control={theme.colors.control} />
+                <InlineText text={item} baseStyle={styles.body} boldColor={boldColor} highlightColor={highlightColor} surface={theme.colors.surface1} />
               </Text>
             ))}
           </View>
@@ -230,7 +261,7 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
             {block.items.map((item, itemIndex) => (
               <Text key={itemIndex} style={styles.listItem}>
                 {itemIndex + 1}.{" "}
-                <InlineText text={item} baseStyle={styles.body} accent={theme.colors.accent} control={theme.colors.control} />
+                <InlineText text={item} baseStyle={styles.body} boldColor={boldColor} highlightColor={highlightColor} surface={theme.colors.surface1} />
               </Text>
             ))}
           </View>
@@ -238,7 +269,7 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
       default:
         return (
           <Text key={index} style={[styles.body, styles.paragraph]}>
-            <InlineText text={block.text} baseStyle={styles.body} accent={theme.colors.accent} control={theme.colors.control} />
+            <InlineText text={block.text} baseStyle={styles.body} boldColor={boldColor} highlightColor={highlightColor} surface={theme.colors.surface1} />
           </Text>
         );
     }

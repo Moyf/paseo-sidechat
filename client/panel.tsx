@@ -114,6 +114,12 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
       statusText: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 11 : 12 },
       errorText: { color: theme.colors.statusDanger, fontSize: layout.compact ? 12 : 13 },
       metaText: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 10 : 11 },
+      threadDivider: {
+        color: theme.colors.foregroundMuted,
+        fontSize: layout.compact ? 10 : 11,
+        marginTop: 10,
+        textAlign: "center" as const,
+      },
       footer: { borderTopWidth: 1, borderColor: theme.colors.border, paddingHorizontal: pad, paddingTop: 8, paddingBottom: 10, gap: 6 },
       modelRow: {
         flexDirection: "row" as const,
@@ -220,11 +226,18 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
       >
         {questions.length === 0 ? (
           <Text style={styles.statusText}>
-            {"在主 agent 干活时，把旁路问题丢到这里。\n回答基于当前会话上下文，但不会写进主会话。"}
+            {
+              "在主 agent 干活时，把旁路问题丢到这里。\n追问会继续同一个 btw 会话；Clear 结束当前线程。\n回答基于主会话上下文，但不会写进主会话。"
+            }
           </Text>
         ) : (
-          questions.map((question) => (
+          questions.map((question, index) => (
             <View key={question.id} style={styles.item}>
+              {index > 0 &&
+              question.threadId &&
+              questions[index - 1].threadId !== question.threadId ? (
+                <Text style={styles.threadDivider}>— 新会话线程 —</Text>
+              ) : null}
               <Text style={styles.questionText}>{question.question}</Text>
               {question.status === "pending" ? (
                 <Text style={styles.statusText}>排队中…</Text>

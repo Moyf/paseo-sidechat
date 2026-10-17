@@ -16,6 +16,7 @@ export const btwAsk = defineRpc({
 export const btwQuestionSchema = z.object({
   id: z.string(),
   agentId: z.string(),
+  threadId: z.string().nullable(),
   question: z.string(),
   status: btwQuestionStatusSchema,
   answer: z.string(),

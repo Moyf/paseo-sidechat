@@ -1,19 +1,24 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { btwAsk, btwClear, btwStatus, type BtwQuestion } from "./shared/contracts";
 import {
-  activeTempAgentIds,
   addQuestion,
+  clearAllIdleTimers,
   clearQuestions,
+  closeThread,
   listQuestionsForAgent,
+  openThreadAgentIds,
   runningCount,
+  runningTempAgentIds,
 } from "./server/store";
-import { boundApi, startQuestion } from "./server/runner";
+import { applySettings, boundApi, startQuestion } from "./server/runner";
+import { btwSettingsDefinition } from "./shared/settings";
 
 const MAX_RUNNING = 3;
 
 function toQuestion(entry: {
   id: string;
   agentId: string;
+  threadId: string | null;
   question: string;
   status: BtwQuestion["status"];
   answer: string;
@@ -26,6 +31,7 @@ function toQuestion(entry: {
   return {
     id: entry.id,
     agentId: entry.agentId,
+    threadId: entry.threadId,
     question: entry.question,
     status: entry.status,
     answer: entry.answer,
@@ -38,6 +44,23 @@ function toQuestion(entry: {
 }
 
 export default function contribute(server: PluginServerContext) {
+  const settings = server.registerSettings(btwSettingsDefinition);
+  const applySettingsState = (state: {
+    status: string;
+    values?: { autoArchive: boolean; idleMinutes: number };
+  }) => {
+    applySettings(
+      state.status === "ready" && state.values
+        ? state.values
+        : { autoArchive: false, idleMinutes: 10 },
+    );
+    if (state.status === "ready" && state.values && !state.values.autoArchive) {
+      clearAllIdleTimers();
+    }
+  };
+  void settings.read().then(applySettingsState).catch(() => {});
+  settings.subscribe((state) => applySettingsState(state));
+
   server.handle(btwAsk, (input, { paseo }) => {
     if (runningCount() >= MAX_RUNNING) {
       throw new Error("已有太多 btw 问题在回答中，请稍后再问");
@@ -51,11 +74,16 @@ export default function contribute(server: PluginServerContext) {
     questions: listQuestionsForAgent(input.agentId).map(toQuestion),
   }));
 
-  server.handle(btwClear, (input) => ({ cleared: clearQuestions(input.agentId) }));
+  server.handle(btwClear, (input, { paseo }) => {
+    const cleared = clearQuestions(input.agentId);
+    const threadId = closeThread(input.agentId);
+    return { cleared };
+  });
 
   return () => {
     const paseo = boundApi();
-    for (const tempId of activeTempAgentIds()) {
+    const ids = [...runningTempAgentIds(), ...openThreadAgentIds()];
+    for (const tempId of ids) {
       try {
         void paseo?.agents.ref(tempId).archive().catch(() => {});
       } catch {

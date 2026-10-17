@@ -5,22 +5,21 @@ export interface QuestionEntry extends BtwQuestion {
   tempAgentId: string | null;
 }
 
-const MAX_QUESTIONS_PER_AGENT = 50;
-const MAX_RUNNING = 3;
-
-const questions = new Map<string, QuestionEntry>();
-const order: string[] = [];
-
-function indexFor(agentId: string): string[] {
-  let ids = questionsByAgent.get(agentId);
-  if (!ids) {
-    ids = [];
-    questionsByAgent.set(agentId, ids);
-  }
-  return ids;
+export interface ThreadState {
+  id: string;
+  agentId: string;
+  provider: string;
+  model: string;
+  busy: boolean;
+  archiveTimer: ReturnType<typeof setTimeout> | null;
 }
 
+const MAX_QUESTIONS_PER_AGENT = 50;
+
+const questions = new Map<string, QuestionEntry>();
 const questionsByAgent = new Map<string, string[]>();
+const order: string[] = [];
+const threads = new Map<string, ThreadState>();
 
 let seq = 0;
 
@@ -29,6 +28,7 @@ export function addQuestion(agentId: string, question: string, requestedModel: s
   const entry: QuestionEntry = {
     id: `btw_${Date.now().toString(36)}_${seq.toString(36)}`,
     agentId,
+    threadId: null,
     question,
     status: "pending",
     answer: "",
@@ -42,7 +42,9 @@ export function addQuestion(agentId: string, question: string, requestedModel: s
   };
   questions.set(entry.id, entry);
   order.push(entry.id);
-  indexFor(agentId).push(entry.id);
+  const ids = questionsByAgent.get(agentId) ?? [];
+  ids.push(entry.id);
+  questionsByAgent.set(agentId, ids);
   trim();
   return entry;
 }
@@ -67,10 +69,6 @@ function trim(): void {
   }
 }
 
-export function getQuestion(id: string): QuestionEntry | undefined {
-  return questions.get(id);
-}
-
 export function listQuestionsForAgent(agentId: string): QuestionEntry[] {
   const ids = questionsByAgent.get(agentId) ?? [];
   const entries: QuestionEntry[] = [];
@@ -78,7 +76,7 @@ export function listQuestionsForAgent(agentId: string): QuestionEntry[] {
     const entry = questions.get(id);
     if (entry) entries.push(entry);
   }
-  return entries.reverse();
+  return entries;
 }
 
 export function clearQuestions(agentId: string): number {
@@ -106,7 +104,37 @@ export function runningCount(): number {
   return count;
 }
 
-export function activeTempAgentIds(): string[] {
+export function getThread(agentId: string): ThreadState | undefined {
+  return threads.get(agentId);
+}
+
+export function setThread(thread: ThreadState): void {
+  threads.set(thread.agentId, thread);
+}
+
+/** Closes the thread for an agent and returns its temp agent id for archiving. */
+export function closeThread(agentId: string): string | null {
+  const thread = threads.get(agentId);
+  if (!thread) return null;
+  if (thread.archiveTimer) clearTimeout(thread.archiveTimer);
+  threads.delete(agentId);
+  return thread.id;
+}
+
+export function openThreadAgentIds(): string[] {
+  return [...threads.values()].map((thread) => thread.id);
+}
+
+export function clearAllIdleTimers(): void {
+  for (const thread of threads.values()) {
+    if (thread.archiveTimer) {
+      clearTimeout(thread.archiveTimer);
+      thread.archiveTimer = null;
+    }
+  }
+}
+
+export function runningTempAgentIds(): string[] {
   const ids: string[] = [];
   for (const entry of questions.values()) {
     if ((entry.status === "running" || entry.status === "pending") && entry.tempAgentId) {

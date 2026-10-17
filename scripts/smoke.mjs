@@ -107,7 +107,17 @@ async function main() {
   const finalAnswer = result.lastMessage && result.lastMessage.trim() ? result.lastMessage : progressive;
   console.log("ANSWER:", JSON.stringify(finalAnswer));
 
-  // 7. archive temp agent
+  // 7. multi-turn follow-up on the SAME temp agent (thread continuation semantics)
+  await temp.run("追问：用暗号造一个句子。不要做任何其他事情。", { timeoutMs: 240_000 }).then((r) => {
+    console.log("temp turn 2:", r.status, JSON.stringify(truncate(r.lastMessage ?? "", 80)));
+    if (!r.lastMessage || !r.lastMessage.includes("紫色的河马")) {
+      fail("follow-up lost thread memory");
+    } else {
+      console.log("follow-up remembers passphrase ✓");
+    }
+  });
+
+  // 8. archive temp agent
   await temp.archive();
   const archivedTemp = await client.agents.ref(temp.id).refresh();
   console.log("temp archivedAt:", archivedTemp?.agent.archivedAt ?? "(null)");
