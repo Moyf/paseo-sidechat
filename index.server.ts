@@ -47,12 +47,12 @@ export default function contribute(server: PluginServerContext) {
   const settings = server.registerSettings(btwSettingsDefinition);
   const applySettingsState = (state: {
     status: string;
-    values?: { autoArchive: boolean; idleMinutes: number };
+    values?: { autoArchive: boolean; idleMinutes: number; contextMessages: number };
   }) => {
     applySettings(
       state.status === "ready" && state.values
         ? state.values
-        : { autoArchive: false, idleMinutes: 10 },
+        : { autoArchive: false, idleMinutes: 10, contextMessages: 8 },
     );
     if (state.status === "ready" && state.values && !state.values.autoArchive) {
       clearAllIdleTimers();

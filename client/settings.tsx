@@ -20,6 +20,7 @@ const PREVIEW_MARKDOWN = [
 export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
   const settings = useSettings(btwSettingsDefinition);
   const [idleText, setIdleText] = useState<string | null>(null);
+  const [contextText, setContextText] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const values = settings.status === "ready" ? settings.values : null;
@@ -29,7 +30,10 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     if (ready && values && idleText === null) {
       setIdleText(String(values.idleMinutes));
     }
-  }, [ready, values, idleText]);
+    if (ready && values && contextText === null) {
+      setContextText(String(values.contextMessages));
+    }
+  }, [ready, values, idleText, contextText]);
 
   const styles = useMemo(
     () => ({
@@ -52,7 +56,7 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     [theme, layout.compact],
   );
 
-  const save = (patch: Partial<Record<"autoArchive" | "idleMinutes" | "headingColor" | "boldColor" | "highlightColor", unknown>>) => {
+  const save = (patch: Partial<Record<"autoArchive" | "idleMinutes" | "contextMessages" | "headingColor" | "boldColor" | "highlightColor", unknown>>) => {
     if (!ready || !values) return;
     void settings.save({ ...values, ...patch } as typeof values, settings.revision);
   };
@@ -63,6 +67,14 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     if (!Number.isFinite(parsed)) return;
     const clamped = Math.min(1440, Math.max(1, parsed));
     saveTimer.current = setTimeout(() => save({ idleMinutes: clamped }), 600);
+  };
+
+  const scheduleContextSave = (text: string) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const parsed = Number.parseInt(text, 10);
+    if (!Number.isFinite(parsed)) return;
+    const clamped = Math.min(50, Math.max(1, parsed));
+    saveTimer.current = setTimeout(() => save({ contextMessages: clamped }), 600);
   };
 
   const colorSelect = (label: string, field: "headingColor" | "boldColor" | "highlightColor") => (
@@ -105,6 +117,18 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
             scheduleIdleSave(text);
           }}
           disabled={!ready || !(values?.autoArchive ?? false)}
+        />
+      </SettingsSection>
+      <SettingsSection title="主会话上下文" info="新线程会读取主会话最近的对话作为背景">
+        <SettingsInput
+          label="上下文消息条数"
+          hint="1 到 50 之间的整数，默认 8；超长消息另有 12000 字符总量上限"
+          initialValue={contextText ?? ""}
+          onChangeText={(text) => {
+            setContextText(text);
+            scheduleContextSave(text);
+          }}
+          disabled={!ready}
         />
       </SettingsSection>
       {settings.saveError ? <Text style={styles.error}>{settings.saveError}</Text> : null}

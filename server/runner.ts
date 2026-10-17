@@ -10,13 +10,17 @@ type TurnResult = Awaited<ReturnType<AgentHandle["waitForFinish"]>>;
 const ANSWER_TIMEOUT_MS = 4 * 60_000;
 const ANSWER_POLL_MS = 1000;
 const TITLE_MAX = 60;
-const DEFAULT_SETTINGS = { autoArchive: false, idleMinutes: 10 };
+const DEFAULT_SETTINGS = { autoArchive: false, idleMinutes: 10, contextMessages: 8 };
 
 let boundPaseo: PaseoApi | null = null;
 let reaped = false;
-let activeSettings: { autoArchive: boolean; idleMinutes: number } = DEFAULT_SETTINGS;
+let activeSettings: { autoArchive: boolean; idleMinutes: number; contextMessages: number } = DEFAULT_SETTINGS;
 
-export function applySettings(values: { autoArchive: boolean; idleMinutes: number }): void {
+export function applySettings(values: {
+  autoArchive: boolean;
+  idleMinutes: number;
+  contextMessages: number;
+}): void {
   activeSettings = values;
 }
 
@@ -176,7 +180,7 @@ async function startThread(
   model: string,
   entry: QuestionEntry,
 ): Promise<void> {
-  const context = await buildContext(paseo, entry.agentId);
+  const context = await buildContext(paseo, entry.agentId, activeSettings.contextMessages);
   const prompt = buildPrompt(context, entry.question);
   const modeId = await pickPlanMode(paseo, provider);
 

@@ -2,7 +2,7 @@ import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 
 type PaseoApi = PluginHandlerContext["paseo"];
 
-const MAX_MESSAGES = 16;
+const DEFAULT_MAX_MESSAGES = 8;
 const MAX_CHARS_PER_MESSAGE = 1500;
 const MAX_TOTAL_CHARS = 12000;
 
@@ -13,7 +13,11 @@ function truncate(text: string, max: number): string {
 }
 
 /** Reads the main agent's recent conversation as side-question context. Read-only, never writes. */
-export async function buildContext(paseo: PaseoApi, agentId: string): Promise<string> {
+export async function buildContext(
+  paseo: PaseoApi,
+  agentId: string,
+  maxMessages: number = DEFAULT_MAX_MESSAGES,
+): Promise<string> {
   try {
     const page = await paseo.agents.ref(agentId).timeline.refetch({ direction: "tail", limit: 60 });
     const lines: Array<{ role: string; text: string }> = [];
@@ -25,7 +29,7 @@ export async function buildContext(paseo: PaseoApi, agentId: string): Promise<st
         lines.push({ role: "助手", text: item.text });
       }
     }
-    const recent = lines.slice(-MAX_MESSAGES).map((line) => ({
+    const recent = lines.slice(-Math.max(1, Math.floor(maxMessages))).map((line) => ({
       role: line.role,
       text: truncate(line.text, MAX_CHARS_PER_MESSAGE),
     }));
