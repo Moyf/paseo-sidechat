@@ -170,7 +170,6 @@ function InlineText({
                   ...baseStyle,
                   color: highlightColor,
                   backgroundColor: withAlpha(highlightColor, 0.22, surface),
-                  fontWeight: "600" as const,
                 }
               : segment.code
                 ? { ...baseStyle, fontFamily: "monospace", color: baseStyle.color }
