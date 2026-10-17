@@ -8,6 +8,7 @@ export default function contribute(client: PluginClientContext) {
     title: "btw",
     icon: "MessageCircleQuestion",
     context: "agent",
+    locations: ["explorer"],
     Component: BtwPanel,
   });
 
@@ -22,7 +23,7 @@ export default function contribute(client: PluginClientContext) {
         throw new Error("用法：/btw <问题>");
       }
       await rpc(btwAsk, { agentId: agent.id, question });
-      openPanel("btw");
+      openPanel("btw", { location: "explorer" });
     },
   });
 
@@ -33,7 +34,7 @@ export default function contribute(client: PluginClientContext) {
     keywords: ["btw", "ask", "旁路"],
     context: "agent",
     onSelect({ openPanel }) {
-      openPanel("btw");
+      openPanel("btw", { location: "explorer" });
     },
   });
 
