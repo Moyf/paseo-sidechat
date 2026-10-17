@@ -33,14 +33,19 @@ async function pollAnswer(handle: AgentHandle, entry: QuestionEntry): Promise<vo
   try {
     const page = await handle.timeline.refetch({ direction: "tail", limit: 40 });
     const texts: string[] = [];
+    let collecting = false;
     for (const timelineEntry of page.entries) {
-      if (timelineEntry.item.type === "assistant_message") {
+      if (timelineEntry.item.type === "user_message") {
+        // restart at every user message: only text after the latest one belongs to this turn
+        collecting = true;
+        texts.length = 0;
+        continue;
+      }
+      if (collecting && timelineEntry.item.type === "assistant_message") {
         texts.push(timelineEntry.item.text);
       }
     }
-    if (texts.length > 0) {
-      entry.answer = texts.join("\n\n");
-    }
+    entry.answer = texts.join("\n\n");
   } catch {
     // transient refetch failures are fine; the next tick retries
   }
