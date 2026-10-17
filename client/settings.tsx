@@ -3,6 +3,7 @@ import { SettingsInput, SettingsSection, SettingsSelect, SettingsSwitch } from "
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { dictionaries, resolveLang } from "./i18n";
+import { applyUiLanguage } from "./ui-registration";
 import { btwSettingsDefinition, colorModeSchema, type ColorMode } from "../shared/settings";
 import { MarkdownView } from "./markdown";
 
@@ -16,8 +17,13 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
 
   const values = settings.status === "ready" ? settings.values : null;
   const ready = settings.status === "ready";
-  const t = dictionaries[resolveLang(values?.language)];
+  const uiLang = resolveLang(values?.language);
+  const t = dictionaries[uiLang];
   const previewMarkdown = t.previewMarkdown;
+
+  useEffect(() => {
+    applyUiLanguage(uiLang);
+  }, [uiLang]);
 
   useEffect(() => {
     if (ready && values) {

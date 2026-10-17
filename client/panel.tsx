@@ -5,6 +5,7 @@ import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { btwAsk, btwClear, btwStatus, type BtwMode, type BtwQuestion } from "../shared/contracts";
 import { btwSettingsDefinition } from "../shared/settings";
 import { dictionaries, resolveLang } from "./i18n";
+import { applyUiLanguage } from "./ui-registration";
 import { MarkdownView } from "./markdown";
 
 interface ModelOption {
@@ -23,7 +24,12 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
   const statusRpc = useRpc(btwStatus);
   const clearRpc = useRpc(btwClear);
   const settingsState = useSettings(btwSettingsDefinition);
-  const t = dictionaries[resolveLang(settingsState.status === "ready" ? settingsState.values.language : null)];
+  const uiLang = resolveLang(settingsState.status === "ready" ? settingsState.values.language : null);
+  const t = dictionaries[uiLang];
+
+  useEffect(() => {
+    applyUiLanguage(uiLang);
+  }, [uiLang]);
 
   const agent = useAgent(agentId, (value) => ({
     title: value.title,
