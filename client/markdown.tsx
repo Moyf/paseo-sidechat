@@ -2,7 +2,7 @@ import { useMemo, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import type { PluginTheme } from "@getpaseo/plugin";
 
-type Segment = { text: string; bold: boolean; code: boolean };
+type Segment = { text: string; bold: boolean; code: boolean; highlight: boolean };
 
 type Block =
   | { kind: "p"; text: string }
@@ -11,19 +11,39 @@ type Block =
   | { kind: "ul"; items: string[] }
   | { kind: "ol"; items: string[] };
 
-const INLINE_PATTERN = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+const INLINE_PATTERN = /(\*\*[^*]+\*\*|==[^=]+==|`[^`]+`)/g;
 
 function parseInline(text: string): Segment[] {
   const parts = text.split(INLINE_PATTERN).filter((part) => part.length > 0);
   return parts.map((part) => {
     if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
-      return { text: part.slice(2, -2), bold: true, code: false };
+      return { text: part.slice(2, -2), bold: true, code: false, highlight: false };
+    }
+    if (part.startsWith("==") && part.endsWith("==") && part.length > 4) {
+      return { text: part.slice(2, -2), bold: false, code: false, highlight: true };
     }
     if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
-      return { text: part.slice(1, -1), bold: false, code: true };
+      return { text: part.slice(1, -1), bold: false, code: true, highlight: false };
     }
-    return { text: part, bold: false, code: false };
+    return { text: part, bold: false, code: false, highlight: false };
   });
+}
+
+function withAlpha(hex: string | undefined, alpha: number, fallback: string): string {
+  if (!hex || hex.charCodeAt(0) !== 35) return fallback;
+  const body = hex.slice(1);
+  const expanded =
+    body.length === 3
+      ? body
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : body;
+  if (expanded.length !== 6 || /[^0-9a-fA-F]/.test(expanded)) return fallback;
+  const red = parseInt(expanded.slice(0, 2), 16);
+  const green = parseInt(expanded.slice(2, 4), 16);
+  const blue = parseInt(expanded.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
 function parseBlocks(markdown: string): Block[] {
@@ -106,7 +126,17 @@ function parseBlocks(markdown: string): Block[] {
   return blocks;
 }
 
-function InlineText({ text, baseStyle }: { text: string; baseStyle: { color: string; fontSize: number } }) {
+function InlineText({
+  text,
+  baseStyle,
+  accent,
+  control,
+}: {
+  text: string;
+  baseStyle: { color: string; fontSize: number };
+  accent?: string;
+  control: string;
+}) {
   const segments = useMemo(() => parseInline(text), [text]);
   return (
     <Text>
@@ -114,11 +144,18 @@ function InlineText({ text, baseStyle }: { text: string; baseStyle: { color: str
         <Text
           key={index}
           style={
-            segment.code
-              ? { ...baseStyle, fontFamily: "monospace", color: baseStyle.color }
-              : segment.bold
-                ? { ...baseStyle, fontWeight: "700" as const }
-                : baseStyle
+            segment.highlight
+              ? {
+                  ...baseStyle,
+                  color: accent ?? baseStyle.color,
+                  backgroundColor: withAlpha(accent, 0.22, control),
+                  fontWeight: "600" as const,
+                }
+              : segment.code
+                ? { ...baseStyle, fontFamily: "monospace", color: baseStyle.color }
+                : segment.bold
+                  ? { ...baseStyle, fontWeight: "700" as const }
+                  : baseStyle
           }
         >
           {segment.text}
@@ -182,7 +219,7 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
             {block.items.map((item, itemIndex) => (
               <Text key={itemIndex} style={styles.listItem}>
                 •{" "}
-                <InlineText text={item} baseStyle={styles.body} />
+                <InlineText text={item} baseStyle={styles.body} accent={theme.colors.accent} control={theme.colors.control} />
               </Text>
             ))}
           </View>
@@ -193,7 +230,7 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
             {block.items.map((item, itemIndex) => (
               <Text key={itemIndex} style={styles.listItem}>
                 {itemIndex + 1}.{" "}
-                <InlineText text={item} baseStyle={styles.body} />
+                <InlineText text={item} baseStyle={styles.body} accent={theme.colors.accent} control={theme.colors.control} />
               </Text>
             ))}
           </View>
@@ -201,7 +238,7 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
       default:
         return (
           <Text key={index} style={[styles.body, styles.paragraph]}>
-            <InlineText text={block.text} baseStyle={styles.body} />
+            <InlineText text={block.text} baseStyle={styles.body} accent={theme.colors.accent} control={theme.colors.control} />
           </Text>
         );
     }
