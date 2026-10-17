@@ -1,4 +1,4 @@
-# btw
+# 侧聊 (paseo-sidechat)
 
 btw adds side questions to agent sessions in Paseo. While an agent is working, you can ask a quick "by the way" question that is answered from the context of that session without sending anything to the agent or writing to its transcript.
 

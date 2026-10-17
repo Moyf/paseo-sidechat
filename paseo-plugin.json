@@ -1,9 +1,10 @@
 {
-  "id": "paseo-btw",
+  "id": "paseo-sidechat",
   "$comment": "Add \"name\": \"My plugin\" to set a display name. Add \"icon\": \"assets/icon.png\" for a PNG inside the package. Add image or video paths (relative to this manifest) or HTTPS URLs to media. Include local assets in package.json files.",
   "media": [],
   "requirements": {
     "paseo": ">=0.11.2"
   },
-  "description": "Side questions for agent sessions: /btw asks from current context in its own panel without touching the main session."
+  "description": "Side chats for agent sessions: /btw asks, /side works, /fork clones. Answers never touch the main session.",
+  "name": "侧聊 Side Chat"
 }
