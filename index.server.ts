@@ -4,9 +4,13 @@ import {
   addQuestion,
   clearAllIdleTimers,
   clearQuestions,
+  clearThreadQuestions,
+  closeAllThreads,
   closeThread,
   ensureLoaded,
   flushSave,
+  getThreadById,
+  listOpenThreads,
   listQuestionsForAgent,
   openThreadAgentIds,
   runningCount,
@@ -72,9 +76,15 @@ export default function contribute(server: PluginServerContext) {
 
   server.handle(btwAsk, (input, { paseo }) => {
     if (runningCount() >= MAX_RUNNING) {
-      throw new Error("已有太多 btw 问题在回答中，请稍后再问");
+      throw new Error("已有太多侧聊问题在回答中，请稍后再问");
     }
-    const entry = addQuestion(input.agentId, input.question, input.model ?? null, input.mode ?? "advice");
+    const entry = addQuestion(
+      input.agentId,
+      input.question,
+      input.model ?? null,
+      input.mode ?? "advice",
+      input.threadId ?? null,
+    );
     reapOnce(paseo);
     startQuestion(entry, paseo);
     return { questionId: entry.id };
@@ -83,15 +93,28 @@ export default function contribute(server: PluginServerContext) {
   server.handle(btwStatus, async (input, { paseo }) => {
     await ensureLoaded();
     reapOnce(paseo);
-    return { questions: listQuestionsForAgent(input.agentId).map(toQuestion) };
+    return {
+      questions: listQuestionsForAgent(input.agentId).map(toQuestion),
+      openThreads: listOpenThreads(input.agentId),
+    };
   });
 
   server.handle(btwClear, async (input, { paseo }) => {
     await ensureLoaded();
-    const cleared = clearQuestions(input.agentId);
-    const threadId = closeThread(input.agentId);
-    if (threadId) {
-      void paseo.agents.ref(threadId).archive().catch(() => {});
+    let cleared: number;
+    if (input.threadId) {
+      // archive one thread: drop its finished questions and retire its agent
+      cleared = clearThreadQuestions(input.agentId, input.threadId);
+      const thread = getThreadById(input.agentId, input.threadId);
+      if (thread && !thread.busy) {
+        closeThread(input.agentId, thread.mode);
+        void paseo.agents.ref(thread.id).archive().catch(() => {});
+      }
+    } else {
+      cleared = clearQuestions(input.agentId);
+      for (const threadId of closeAllThreads(input.agentId)) {
+        void paseo.agents.ref(threadId).archive().catch(() => {});
+      }
     }
     await flushSave();
     return { cleared };

@@ -4,6 +4,7 @@ import { loadState, saveState, type PersistedState } from "./persist";
 export interface QuestionEntry extends BtwQuestion {
   requestedModel: string | null;
   tempAgentId: string | null;
+  threadTarget: string | null;
 }
 
 export interface ThreadState {
@@ -12,6 +13,7 @@ export interface ThreadState {
   provider: string;
   model: string;
   mode: BtwMode;
+  firstQuestion: string;
   busy: boolean;
   archiveTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -23,6 +25,10 @@ const questions = new Map<string, QuestionEntry>();
 const questionsByAgent = new Map<string, string[]>();
 const order: string[] = [];
 const threads = new Map<string, ThreadState>();
+
+function threadKey(agentId: string, mode: BtwMode): string {
+  return `${agentId}::${mode}`;
+}
 
 let seq = 0;
 let loadedPromise: Promise<void> | null = null;
@@ -53,6 +59,7 @@ export function ensureLoaded(): Promise<void> {
         elapsedMs: q.elapsedMs,
         requestedModel: q.requestedModel,
         tempAgentId: q.tempAgentId,
+        threadTarget: q.threadTarget ?? null,
       };
       if (questions.has(entry.id)) continue;
       questions.set(entry.id, entry);
@@ -63,12 +70,14 @@ export function ensureLoaded(): Promise<void> {
     }
     for (const t of state.threads) {
       if (threads.has(t.agentId)) continue;
-      threads.set(t.agentId, {
+      const mode: BtwMode = t.mode === "work" ? "work" : "advice";
+      threads.set(threadKey(t.agentId, mode), {
         id: t.id,
         agentId: t.agentId,
         provider: t.provider,
         model: t.model,
-        mode: t.mode === "work" ? "work" : "advice",
+        mode,
+        firstQuestion: t.firstQuestion,
         busy: false,
         archiveTimer: null,
       });
@@ -102,6 +111,7 @@ function persistSnapshot(): PersistedState {
         elapsedMs: entry.elapsedMs,
         requestedModel: entry.requestedModel,
         tempAgentId: entry.tempAgentId,
+        threadTarget: entry.threadTarget,
       })),
     threads: [...threads.values()].map((thread) => ({
       id: thread.id,
@@ -109,6 +119,7 @@ function persistSnapshot(): PersistedState {
       provider: thread.provider,
       model: thread.model,
       mode: thread.mode,
+      firstQuestion: thread.firstQuestion,
     })),
   };
 }
@@ -135,6 +146,7 @@ export function addQuestion(
   question: string,
   requestedModel: string | null,
   mode: BtwMode,
+  threadTarget: string | null,
 ): QuestionEntry {
   seq += 1;
   const entry: QuestionEntry = {
@@ -152,6 +164,7 @@ export function addQuestion(
     elapsedMs: null,
     requestedModel,
     tempAgentId: null,
+    threadTarget,
   };
   questions.set(entry.id, entry);
   order.push(entry.id);
@@ -193,6 +206,25 @@ export function listQuestionsForAgent(agentId: string): QuestionEntry[] {
   return entries;
 }
 
+/** Removes one thread's finished questions and returns the count. */
+export function clearThreadQuestions(agentId: string, threadId: string): number {
+  const ids = questionsByAgent.get(agentId);
+  if (!ids) return 0;
+  let cleared = 0;
+  for (const id of [...ids]) {
+    const entry = questions.get(id);
+    if (!entry || entry.threadId !== threadId) continue;
+    if (entry.status === "running" || entry.status === "pending") continue;
+    questions.delete(id);
+    ids.splice(ids.indexOf(id), 1);
+    const at = order.indexOf(id);
+    if (at >= 0) order.splice(at, 1);
+    cleared += 1;
+  }
+  scheduleSave();
+  return cleared;
+}
+
 export function clearQuestions(agentId: string): number {
   const ids = questionsByAgent.get(agentId);
   if (!ids) return 0;
@@ -219,23 +251,54 @@ export function runningCount(): number {
   return count;
 }
 
-export function getThread(agentId: string): ThreadState | undefined {
-  return threads.get(agentId);
+export function getThread(agentId: string, mode: BtwMode): ThreadState | undefined {
+  return threads.get(threadKey(agentId, mode));
+}
+
+export function getThreadById(agentId: string, threadId: string): ThreadState | undefined {
+  for (const thread of threads.values()) {
+    if (thread.agentId === agentId && thread.id === threadId) return thread;
+  }
+  return undefined;
 }
 
 export function setThread(thread: ThreadState): void {
-  threads.set(thread.agentId, thread);
+  threads.set(threadKey(thread.agentId, thread.mode), thread);
   scheduleSave();
 }
 
-/** Closes the thread for an agent and returns its temp agent id for archiving. */
-export function closeThread(agentId: string): string | null {
-  const thread = threads.get(agentId);
+/** Closes one thread lane and returns its temp agent id for archiving. */
+export function closeThread(agentId: string, mode: BtwMode): string | null {
+  const key = threadKey(agentId, mode);
+  const thread = threads.get(key);
   if (!thread) return null;
   if (thread.archiveTimer) clearTimeout(thread.archiveTimer);
-  threads.delete(agentId);
+  threads.delete(key);
   scheduleSave();
   return thread.id;
+}
+
+/** Closes every lane of an agent; returns the temp agent ids for archiving. */
+export function closeAllThreads(agentId: string): string[] {
+  const ids: string[] = [];
+  for (const mode of ["advice", "work"] as BtwMode[]) {
+    const id = closeThread(agentId, mode);
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+export function listOpenThreads(
+  agentId: string,
+): Array<{ id: string; mode: BtwMode; model: string | null; firstQuestion: string }> {
+  return [...threads.values()]
+    .filter((thread) => thread.agentId === agentId)
+    .map((thread) => ({
+      id: thread.id,
+      mode: thread.mode,
+      model: thread.model || null,
+      firstQuestion: thread.firstQuestion,
+    }));
 }
 
 export function openThreadAgentIds(): string[] {
@@ -253,7 +316,8 @@ export function runningTempAgentIds(): string[] {
 }
 
 export function knownThreadIds(): Set<string> {
-  return new Set(threads.keys());
+  // the reaper matches against temp agent ids, not the composite map keys
+  return new Set([...threads.values()].map((thread) => thread.id));
 }
 
 export function clearAllIdleTimers(): void {

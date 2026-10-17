@@ -7,12 +7,13 @@ export const btwModeSchema = z.enum(["advice", "work"]);
 export type BtwMode = z.infer<typeof btwModeSchema>;
 
 export const btwAsk = defineRpc({
-  name: "btw.ask",
+  name: "sidechat.ask",
   input: z.object({
     agentId: z.string().min(1),
     question: z.string().trim().min(1).max(8000),
     model: z.string().min(1).max(200).optional(),
     mode: btwModeSchema.optional(),
+    threadId: z.string().min(1).optional(),
   }),
   output: z.object({ questionId: z.string() }),
 });
@@ -33,14 +34,27 @@ export const btwQuestionSchema = z.object({
 });
 
 export const btwStatus = defineRpc({
-  name: "btw.status",
+  name: "sidechat.status",
   input: z.object({ agentId: z.string().min(1) }),
-  output: z.object({ questions: z.array(btwQuestionSchema) }),
+  output: z.object({
+    questions: z.array(btwQuestionSchema),
+    openThreads: z.array(
+      z.object({
+        id: z.string(),
+        mode: btwModeSchema,
+        model: z.string().nullable(),
+        firstQuestion: z.string(),
+      }),
+    ),
+  }),
 });
 
 export const btwClear = defineRpc({
-  name: "btw.clear",
-  input: z.object({ agentId: z.string().min(1) }),
+  name: "sidechat.clear",
+  input: z.object({
+    agentId: z.string().min(1),
+    threadId: z.string().min(1).optional(),
+  }),
   output: z.object({ cleared: z.number() }),
 });
 

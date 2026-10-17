@@ -18,6 +18,7 @@ export interface PersistedQuestion {
   elapsedMs: number | null;
   requestedModel: string | null;
   tempAgentId: string | null;
+  threadTarget: string | null;
 }
 
 export interface PersistedThread {
@@ -26,6 +27,7 @@ export interface PersistedThread {
   provider: string;
   model: string;
   mode: BtwMode;
+  firstQuestion: string;
 }
 
 export interface PersistedState {
@@ -34,20 +36,24 @@ export interface PersistedState {
   threads: PersistedThread[];
 }
 
-const dir = join(homedir(), ".paseo", "plugin-data", "paseo-btw");
+const dir = join(homedir(), ".paseo", "plugin-data", "paseo-sidechat");
 const file = join(dir, "history.json");
+const legacyFile = join(homedir(), ".paseo", "plugin-data", "paseo-btw", "history.json");
 
 export async function loadState(): Promise<PersistedState | null> {
-  try {
-    const raw = await readFile(file, "utf8");
-    const parsed = JSON.parse(raw) as PersistedState;
-    if (parsed && parsed.version === 1 && Array.isArray(parsed.questions)) {
-      return parsed;
+  for (const candidate of [file, legacyFile]) {
+    try {
+      const raw = await readFile(candidate, "utf8");
+      const parsed = JSON.parse(raw) as PersistedState;
+      if (parsed && parsed.version === 1 && Array.isArray(parsed.questions)) {
+        return parsed;
+      }
+      return null;
+    } catch {
+      continue;
     }
-    return null;
-  } catch {
-    return null;
   }
+  return null;
 }
 
 export async function saveState(state: PersistedState): Promise<void> {

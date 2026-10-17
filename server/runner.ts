@@ -1,6 +1,13 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { QuestionEntry, ThreadState } from "./store";
-import { closeThread, getThread, knownThreadIds, scheduleSave, setThread } from "./store";
+import {
+  closeThread,
+  getThread,
+  getThreadById,
+  knownThreadIds,
+  scheduleSave,
+  setThread,
+} from "./store";
 import { buildContext, buildPrompt } from "./context";
 
 type PaseoApi = PluginHandlerContext["paseo"];
@@ -141,28 +148,40 @@ async function runQuestion(entry: QuestionEntry, paseo: PaseoApi): Promise<void>
     const model = entry.requestedModel ?? main.model ?? "";
     entry.model = model || null;
 
-    const existing = getThread(entry.agentId);
-    const reusable =
-      existing &&
-      !existing.busy &&
-      existing.mode === entry.mode &&
-      existing.provider === provider &&
-      existing.model === (model || "");
-    if (reusable && existing) {
-      await continueThread(paseo, existing, entry);
-    } else {
-      if (existing) {
-        closeThread(entry.agentId);
-        await archiveTemp(paseo, existing.id);
+    if (entry.threadTarget) {
+      const thread = getThreadById(entry.agentId, entry.threadTarget);
+      if (!thread) {
+        throw new Error("目标会话已结束，请取消回复锁定或重新提问");
       }
-      await startThread(paseo, main.workspaceId, provider, model, main.currentModeId ?? null, entry);
+      if (thread.busy) {
+        throw new Error("目标会话正在回答中，请稍候");
+      }
+      entry.mode = thread.mode;
+      entry.model = thread.model || null;
+      await continueThread(paseo, thread, entry);
+    } else {
+      const existing = getThread(entry.agentId, entry.mode);
+      const reusable =
+        existing &&
+        !existing.busy &&
+        existing.provider === provider &&
+        existing.model === (model || "");
+      if (reusable && existing) {
+        await continueThread(paseo, existing, entry);
+      } else {
+        if (existing) {
+          closeThread(entry.agentId, entry.mode);
+          await archiveTemp(paseo, existing.id);
+        }
+        await startThread(paseo, main.workspaceId, provider, model, main.currentModeId ?? null, entry);
+      }
     }
   } catch (error) {
     entry.status = "error";
     entry.error = error instanceof Error ? error.message : String(error);
-    const thread = entry.agentId ? getThread(entry.agentId) : undefined;
+    const thread = entry.agentId ? getThread(entry.agentId, entry.mode) : undefined;
     if (thread && thread.id === entry.threadId) {
-      closeThread(entry.agentId);
+      closeThread(entry.agentId, entry.mode);
       await archiveTemp(paseo, thread.id);
     } else if (entry.tempAgentId) {
       await archiveTemp(paseo, entry.tempAgentId);
@@ -191,7 +210,7 @@ async function continueThread(paseo: PaseoApi, thread: ThreadState, entry: Quest
     // the temp agent may be gone (archived by user, closed with daemon, ...)
     entry.status = "error";
     entry.error = error instanceof Error ? error.message : String(error);
-    closeThread(thread.agentId);
+    closeThread(thread.agentId, thread.mode);
     await archiveTemp(paseo, thread.id);
   } finally {
     thread.busy = false;
@@ -236,6 +255,7 @@ async function startThread(
     provider,
     model: model || "",
     mode: entry.mode,
+    firstQuestion: entry.question,
     busy: true,
     archiveTimer: null,
   };
@@ -249,7 +269,7 @@ async function startThread(
     scheduleSave();
   }
   if (entry.status === "error") {
-    closeThread(entry.agentId);
+    closeThread(entry.agentId, entry.mode);
     await archiveTemp(paseo, handle.id);
     return;
   }
@@ -293,9 +313,9 @@ function scheduleIdleArchive(thread: ThreadState, paseo: PaseoApi): void {
   if (thread.archiveTimer) clearTimeout(thread.archiveTimer);
   thread.archiveTimer = setTimeout(() => {
     thread.archiveTimer = null;
-    const current = getThread(thread.agentId);
+    const current = getThread(thread.agentId, thread.mode);
     if (current && current.id === thread.id && !current.busy) {
-      closeThread(thread.agentId);
+      closeThread(thread.agentId, thread.mode);
       void archiveTemp(paseo, thread.id);
       console.log(`[btw] thread ${thread.id} archived after ${activeSettings.idleMinutes}m idle`);
     }
