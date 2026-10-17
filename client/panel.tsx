@@ -102,7 +102,15 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
       headerSubtitle: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 11 : 12 },
       list: { flex: 1, paddingHorizontal: pad },
       item: { paddingVertical: 10, borderBottomWidth: 1, borderColor: theme.colors.border, gap: 4 },
-      questionText: { color: theme.colors.foreground, fontSize: layout.compact ? 13 : 14, fontWeight: "700" as const },
+      questionText: {
+        color: theme.colors.foregroundMuted,
+        fontSize: layout.compact ? 13 : 14,
+        borderLeftWidth: 3,
+        borderLeftColor: theme.colors.accent,
+        paddingLeft: 8,
+        paddingVertical: 2,
+        gap: 2,
+      },
       statusText: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 11 : 12 },
       errorText: { color: theme.colors.statusDanger, fontSize: layout.compact ? 12 : 13 },
       metaText: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 10 : 11 },
@@ -205,7 +213,11 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
         <Text style={styles.headerSubtitle}>{providerLabel || "…"}</Text>
       </Pressable>
 
-      <ScrollView ref={scrollRef} style={styles.list} contentContainerStyle={{ paddingBottom: 8 }}>
+      <ScrollView
+        ref={scrollRef}
+        style={styles.list}
+        contentContainerStyle={{ paddingBottom: 8, paddingTop: hasActive || questions.length > 0 ? 4 : 14 }}
+      >
         {questions.length === 0 ? (
           <Text style={styles.statusText}>
             {"在主 agent 干活时，把旁路问题丢到这里。\n回答基于当前会话上下文，但不会写进主会话。"}
