@@ -1,31 +1,44 @@
-# 侧聊 (paseo-sidechat)
+# 侧聊 Side Chat (paseo-sidechat)
 
-btw adds side questions to agent sessions in Paseo. While an agent is working, you can ask a quick "by the way" question that is answered from the context of that session without sending anything to the agent or writing to its transcript.
+Side conversations for Paseo agent sessions. While an agent is working, ask parallel questions or run small side tasks without touching the main session.
+
+- `/btw <question>` — ask a side question answered from the current session's context. The answer streams into the panel as markdown; nothing is sent to the main agent.
+- `/side <task>` — same as `/btw`, but the side agent may use tools for small jobs.
+- `/fork [first prompt]` — clone the current conversation into a new parallel session and explore it there.
 
 ## How it works
 
-Type `/btw <question>` in any agent composer, or open the btw panel from the Command Center. The question is handled entirely by the plugin's daemon-side code:
+A question is handled entirely by the plugin's daemon-side code:
 
 1. It reads the recent user and assistant messages from the agent's timeline as context.
-2. It creates a temporary agent in the same workspace, titled with a `[btw]` prefix, and asks it the question together with that context. The temporary agent is instructed to answer in plain text without tools, and a plan or read-only mode is selected when the provider offers one.
+2. It creates a temporary agent in the same workspace (labelled `btw: side-question`, optionally attached to the main session as a parent) and asks it the question together with that context. Advice threads run in a plan or read-only mode when the provider offers one; work threads follow the session's mode.
 3. The panel polls for the answer and renders it as streaming markdown.
 
-Follow-up questions continue the same temporary agent, so each thread keeps its own Q&A history plus the main session context it started with. Threads stay open until you press Clear, reload the plugin, or restart the daemon; optional idle auto-archiving is available in the plugin settings and is off by default.
+Follow-up questions continue the same temporary agent, so each thread keeps its own Q&A history. Threads persist to disk and survive plugin and daemon reloads; threads can also attach to the main session and archive with it (plugin setting, on by default). Idle auto-archiving is optional and off by default.
 
-The main agent never receives a message, and nothing is appended to its timeline. Answers live in the plugin's memory on the daemon and are cleared when the daemon restarts or when you press Clear.
+The main agent never receives a message, and nothing is appended to its timeline. Questions, answers and side-thread identities are stored locally under `~/.paseo/plugin-data/paseo-sidechat/`. Prompt context (recent main-session messages) is sent to the side agent's provider, the same way the main session's own messages are.
 
-## Model selection
+## The panel
 
-The panel has a model picker that lists the models of the session's provider, defaulting to the model the session currently uses. The panel header shows which agent session it belongs to; pressing it opens that agent.
+- Reply lock: press Reply on an answer to aim follow-ups at that exact thread; the header chip shows the target and ✕ releases it.
+- Archive: retires the current thread's agent and removes its Q&A from the panel. Other threads are untouched.
+- Model picker with text search; defaults to the model the session currently uses. Switching models starts a new thread on the next question.
+- Live strip above the input shows the running question's streaming answer.
+- Interface text follows the system language (Chinese or English). Answer appearance (heading, bold and highlight colors) is configurable in the plugin settings.
+
+## Settings
+
+- Attach threads to the main session (default on).
+- Idle auto-archive with a configurable timeout (default off).
+- Context message count read from the main session (default 8).
 
 ## Requirements
 
 - Paseo 0.11.2 or later on the daemon.
-- Any provider configured in Paseo. No API keys or accounts are needed by the plugin itself; it reuses the daemon's provider setup.
+- Any provider configured in Paseo. The plugin needs no API keys or accounts; it reuses the daemon's provider setup.
 
 ## Known limits
 
 - Up to three side questions can run at the same time; each answer has a four minute timeout.
-- Context is limited to the last 16 user and assistant messages (about 12,000 characters). Tool calls and reasoning items are not included.
-- Question history is kept in memory per daemon run and per session, up to 50 questions per agent.
-- Changing the model in the panel starts a new thread on the next question; a thread keeps the model it was created with.
+- Context is capped both by message count (settings) and total characters; tool calls and reasoning items are not included.
+- The last 50 questions per agent are kept.
