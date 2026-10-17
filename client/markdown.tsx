@@ -11,7 +11,8 @@ type Block =
   | { kind: "h"; level: number; text: string }
   | { kind: "code"; text: string }
   | { kind: "ul"; items: string[] }
-  | { kind: "ol"; items: string[] };
+  | { kind: "ol"; items: string[] }
+  | { kind: "table"; header: string[]; rows: string[][]; align: Array<"left" | "center" | "right"> };
 
 const INLINE_PATTERN = /(\*\*[^*]+\*\*|==[^=]+==|`[^`]+`)/g;
 
@@ -48,6 +49,20 @@ function withAlpha(hex: string | undefined, alpha: number, fallback: string): st
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
+function splitTableRow(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function isTableDelimiter(line: string): boolean {
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{1,}:?$/.test(cell));
+}
+
 function parseBlocks(markdown: string): Block[] {
   const blocks: Block[] = [];
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
@@ -68,7 +83,8 @@ function parseBlocks(markdown: string): Block[] {
     }
   };
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
     if (codeLines !== null) {
       if (/^```/.test(line.trim())) {
         blocks.push({ kind: "code", text: codeLines.join("\n") });
@@ -84,6 +100,30 @@ function parseBlocks(markdown: string): Block[] {
       flushList();
       codeLines = [];
       continue;
+    }
+    if (line.includes("|") && i + 1 < lines.length && isTableDelimiter(lines[i + 1])) {
+      const header = splitTableRow(line);
+      const delimiters = splitTableRow(lines[i + 1]);
+      if (delimiters.length === header.length) {
+        flushParagraph();
+        flushList();
+        const align = delimiters.map((cell) =>
+          cell.startsWith(":") && cell.endsWith(":")
+            ? ("center" as const)
+            : cell.endsWith(":")
+              ? ("right" as const)
+              : ("left" as const),
+        );
+        const rows: string[][] = [];
+        let j = i + 2;
+        while (j < lines.length && lines[j].includes("|") && lines[j].trim().length > 0) {
+          rows.push(splitTableRow(lines[j]));
+          j += 1;
+        }
+        blocks.push({ kind: "table", header, rows, align });
+        i = j - 1;
+        continue;
+      }
     }
     const heading = line.match(/^(#{1,4})\s+(.*)$/);
     if (heading) {
@@ -222,6 +262,27 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
       h4: { color: headingColor, fontSize: bodySize + 1, fontWeight: "700" as const, marginTop: 6, marginBottom: 3 },
       listItem: { color: theme.colors.foreground, fontSize: bodySize, lineHeight: bodySize * 1.55, marginLeft: 12, marginTop: 2 },
       paragraph: { marginTop: 2, marginBottom: 6 },
+      table: {
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: 8,
+        overflow: "hidden" as const,
+        marginVertical: 6,
+      },
+      tableRow: { flexDirection: "row" as const },
+      tableHead: {
+        backgroundColor: theme.colors.surface1,
+        borderBottomWidth: 1,
+        borderBottomColor: theme.colors.border,
+      },
+      tableRowLine: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+      tableCell: { flex: 1, minWidth: 0, padding: 6 },
+      tableHeadText: {
+        color: theme.colors.foreground,
+        fontSize: bodySize - 1,
+        lineHeight: (bodySize - 1) * 1.5,
+        fontWeight: "700" as const,
+      },
     };
   }, [theme, compact, headingColor]);
 
@@ -272,6 +333,48 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
             ))}
           </View>
         );
+      case "table": {
+        const cellBase = (col: number): { color: string; fontSize: number; lineHeight: number; textAlign: "left" | "center" | "right" } => ({
+          color: theme.colors.foreground,
+          fontSize: styles.codeText.fontSize,
+          lineHeight: styles.codeText.fontSize * 1.5,
+          textAlign: block.align[col] ?? "left",
+        });
+        return (
+          <View key={index} style={styles.table}>
+            <View style={[styles.tableRow, styles.tableHead]}>
+              {block.header.map((cell, col) => (
+                <View key={col} style={styles.tableCell}>
+                  <InlineText
+                    text={cell}
+                    baseStyle={styles.tableHeadText}
+                    boldColor={boldColor}
+                    highlightColor={highlightColor}
+                    highlightBgColor={highlightBgColor}
+                    surface={theme.colors.surface1}
+                  />
+                </View>
+              ))}
+            </View>
+            {block.rows.map((row, rowIndex) => (
+              <View key={rowIndex} style={[styles.tableRow, rowIndex < block.rows.length - 1 ? styles.tableRowLine : null]}>
+                {block.header.map((_, col) => (
+                  <View key={col} style={styles.tableCell}>
+                    <InlineText
+                      text={row[col] ?? ""}
+                      baseStyle={cellBase(col)}
+                      boldColor={boldColor}
+                      highlightColor={highlightColor}
+                      highlightBgColor={highlightBgColor}
+                      surface={theme.colors.surface1}
+                    />
+                  </View>
+                ))}
+              </View>
+            ))}
+          </View>
+        );
+      }
       default:
         return (
           <Text key={index} style={[styles.body, styles.paragraph]}>

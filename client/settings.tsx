@@ -15,6 +15,9 @@ const PREVIEW_MARKDOWN = [
   "正文里可以有**加粗文字**、==高亮文字==和`行内代码`。",
   "- 列表项带**加粗**",
   "- 列表项带==高亮==",
+  "| 表格 | 也支持 |",
+  "|---|---|",
+  "| 单元格内**加粗** | 单元格内==高亮== |",
 ].join("\n");
 
 export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
