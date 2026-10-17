@@ -1,6 +1,6 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { QuestionEntry, ThreadState } from "./store";
-import { closeThread, getThread, setThread } from "./store";
+import { closeThread, getThread, knownThreadIds, scheduleSave, setThread } from "./store";
 import { buildContext, buildPrompt } from "./context";
 
 type PaseoApi = PluginHandlerContext["paseo"];
@@ -10,18 +10,33 @@ type TurnResult = Awaited<ReturnType<AgentHandle["waitForFinish"]>>;
 const ANSWER_TIMEOUT_MS = 4 * 60_000;
 const ANSWER_POLL_MS = 1000;
 const TITLE_MAX = 60;
-const DEFAULT_SETTINGS = { autoArchive: false, idleMinutes: 10, contextMessages: 8 };
+const DEFAULT_SETTINGS = {
+  autoArchive: false,
+  idleMinutes: 10,
+  contextMessages: 8,
+  attachToMain: true,
+};
 
 let boundPaseo: PaseoApi | null = null;
 let reaped = false;
-let activeSettings: { autoArchive: boolean; idleMinutes: number; contextMessages: number } = DEFAULT_SETTINGS;
+let activeSettings: {
+  autoArchive: boolean;
+  idleMinutes: number;
+  contextMessages: number;
+  attachToMain: boolean;
+} = DEFAULT_SETTINGS;
 
 export function applySettings(values: {
   autoArchive: boolean;
   idleMinutes: number;
   contextMessages: number;
+  attachToMain: boolean;
 }): void {
   activeSettings = values;
+}
+
+export function isAttachToMain(): boolean {
+  return activeSettings.attachToMain;
 }
 
 export function boundApi(): PaseoApi | null {
@@ -77,19 +92,27 @@ async function archiveTemp(paseo: PaseoApi, tempId: string): Promise<void> {
   }
 }
 
-/** Archives leftover [btw] temp agents from a previous plugin run (crash/reload). */
+/** Archives leftover [btw] temp agents from a previous run that no known thread claims. */
 async function reapStaleThreads(paseo: PaseoApi): Promise<void> {
   try {
+    const known = knownThreadIds();
     const listing = await paseo.agents.list();
     for (const entry of listing.entries) {
       const labels = entry.agent.labels as Record<string, string> | undefined;
-      if (labels?.btw === "side-question") {
+      if (labels?.btw === "side-question" && !known.has(entry.agent.id)) {
         await archiveTemp(paseo, entry.agent.id);
       }
     }
   } catch (error) {
     console.error("[btw] stale thread reaper failed", error);
   }
+}
+
+/** Runs the leftover sweep once per process; safe to call from any handler. */
+export function reapOnce(paseo: PaseoApi): void {
+  if (reaped) return;
+  reaped = true;
+  void reapStaleThreads(paseo);
 }
 
 export function startQuestion(entry: QuestionEntry, paseo: PaseoApi): void {
@@ -106,11 +129,6 @@ export function startQuestion(entry: QuestionEntry, paseo: PaseoApi): void {
 async function runQuestion(entry: QuestionEntry, paseo: PaseoApi): Promise<void> {
   entry.status = "running";
   try {
-    if (!reaped) {
-      reaped = true;
-      await reapStaleThreads(paseo);
-    }
-
     const mainRef = await paseo.agents.ref(entry.agentId).refresh();
     if (!mainRef) {
       throw new Error("主会话不存在或已不可用");
@@ -124,14 +142,20 @@ async function runQuestion(entry: QuestionEntry, paseo: PaseoApi): Promise<void>
     entry.model = model || null;
 
     const existing = getThread(entry.agentId);
-    if (existing && !existing.busy && existing.provider === provider && existing.model === (model || "")) {
+    const reusable =
+      existing &&
+      !existing.busy &&
+      existing.mode === entry.mode &&
+      existing.provider === provider &&
+      existing.model === (model || "");
+    if (reusable && existing) {
       await continueThread(paseo, existing, entry);
     } else {
       if (existing) {
         closeThread(entry.agentId);
         await archiveTemp(paseo, existing.id);
       }
-      await startThread(paseo, main.workspaceId, provider, model, entry);
+      await startThread(paseo, main.workspaceId, provider, model, main.currentModeId ?? null, entry);
     }
   } catch (error) {
     entry.status = "error";
@@ -146,6 +170,7 @@ async function runQuestion(entry: QuestionEntry, paseo: PaseoApi): Promise<void>
   } finally {
     entry.finishedAt = Date.now();
     entry.elapsedMs = entry.finishedAt - entry.startedAt;
+    scheduleSave();
   }
 }
 
@@ -162,12 +187,17 @@ async function continueThread(paseo: PaseoApi, thread: ThreadState, entry: Quest
   try {
     console.log(`[btw] follow-up ${entry.id} in thread ${thread.id}`);
     await settleTurn(handle.run(entry.question, { timeoutMs: ANSWER_TIMEOUT_MS }), handle, entry);
-  } finally {
-    thread.busy = false;
-  }
-  if (entry.status === "error") {
+  } catch (error) {
+    // the temp agent may be gone (archived by user, closed with daemon, ...)
+    entry.status = "error";
+    entry.error = error instanceof Error ? error.message : String(error);
     closeThread(thread.agentId);
     await archiveTemp(paseo, thread.id);
+  } finally {
+    thread.busy = false;
+    scheduleSave();
+  }
+  if (entry.status === "error") {
     return;
   }
   scheduleIdleArchive(thread, paseo);
@@ -178,20 +208,24 @@ async function startThread(
   workspaceId: string,
   provider: string,
   model: string,
+  mainModeId: string | null,
   entry: QuestionEntry,
 ): Promise<void> {
+  const work = entry.mode === "work";
   const context = await buildContext(paseo, entry.agentId, activeSettings.contextMessages);
-  const prompt = buildPrompt(context, entry.question);
-  const modeId = await pickPlanMode(paseo, provider);
+  const prompt = buildPrompt(context, entry.question, entry.mode);
+  const modeId = work ? mainModeId ?? undefined : await pickPlanMode(paseo, provider);
+  const prefix = work ? "[btw·干活]" : "[btw]";
 
   const handle = await paseo.workspaces.ref(workspaceId).agents.create({
     config: {
       provider: model ? `${provider}/${model}` : provider,
       ...(modeId ? { modeId } : {}),
     },
-    title: `[btw] ${truncateQuestion(entry.question)}`,
+    title: `${prefix} ${truncateQuestion(entry.question)}`,
     prompt,
     labels: { btw: "side-question" },
+    ...(activeSettings.attachToMain ? { parent: entry.agentId } : {}),
   });
   entry.tempAgentId = handle.id;
   entry.threadId = handle.id;
@@ -201,16 +235,18 @@ async function startThread(
     agentId: entry.agentId,
     provider,
     model: model || "",
+    mode: entry.mode,
     busy: true,
     archiveTimer: null,
   };
   setThread(thread);
-  console.log(`[btw] thread ${handle.id} created for question ${entry.id}`);
+  console.log(`[btw] ${work ? "work" : "advice"} thread ${handle.id} created for question ${entry.id}`);
 
   try {
     await settleTurn(handle.waitForFinish(ANSWER_TIMEOUT_MS), handle, entry);
   } finally {
     thread.busy = false;
+    scheduleSave();
   }
   if (entry.status === "error") {
     closeThread(entry.agentId);
@@ -237,7 +273,10 @@ async function settleTurn(turn: Promise<TurnResult>, handle: AgentHandle, entry:
     entry.status = "done";
   } else if (result.status === "permission") {
     entry.status = "error";
-    entry.error = "旁路会话在等待权限确认（它被要求不使用工具），已放弃";
+    entry.error =
+      entry.mode === "work"
+        ? "旁路会话在等待权限确认，请在 Paseo 中找到该会话处理权限请求后重试"
+        : "旁路会话在等待权限确认（它被要求不使用工具），已放弃";
   } else if (result.status === "timeout") {
     entry.status = "error";
     entry.error = "回答超时";
@@ -245,6 +284,7 @@ async function settleTurn(turn: Promise<TurnResult>, handle: AgentHandle, entry:
     entry.status = "error";
     entry.error = result.error ?? `旁路会话异常结束（${result.status}）`;
   }
+  scheduleSave();
 }
 
 function scheduleIdleArchive(thread: ThreadState, paseo: PaseoApi): void {

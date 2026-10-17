@@ -1,4 +1,5 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
+import type { BtwMode } from "../shared/contracts";
 
 type PaseoApi = PluginHandlerContext["paseo"];
 
@@ -48,9 +49,13 @@ export async function buildContext(
   }
 }
 
-export function buildPrompt(context: string, question: string): string {
+export function buildPrompt(context: string, question: string, mode: BtwMode): string {
   const contextBlock = context
     ? `以下是主会话最近的对话记录，作为回答的背景上下文：\n\n<context>\n${context}\n</context>\n\n`
     : "（无法读取主会话上下文，请直接根据问题回答。）\n\n";
-  return `${contextBlock}用户的旁路问题是：\n\n<question>\n${question}\n</question>\n\n要求：\n- 直接用文字回答这个问题，不要执行任何工具，不要读写文件，不要运行命令。\n- 使用与问题相同的语言回答，简洁、结构清晰，可以使用 Markdown。`;
+  const requirement =
+    mode === "work"
+      ? "- 直接处理这个任务或问题；可以在需要时使用工具，但只做与它直接相关的事，改动保持最小范围。\n- 使用与问题相同的语言，简洁、结构清晰，可以使用 Markdown。"
+      : "- 直接用文字回答这个问题，不要执行任何工具，不要读写文件，不要运行命令。\n- 使用与问题相同的语言回答，简洁、结构清晰，可以使用 Markdown。";
+  return `${contextBlock}用户的旁路问题是：\n\n<question>\n${question}\n</question>\n\n要求：\n${requirement}`;
 }

@@ -56,7 +56,7 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     [theme, layout.compact],
   );
 
-  const save = (patch: Partial<Record<"autoArchive" | "idleMinutes" | "contextMessages" | "headingColor" | "boldColor" | "highlightColor", unknown>>) => {
+  const save = (patch: Partial<Record<"autoArchive" | "idleMinutes" | "contextMessages" | "attachToMain" | "headingColor" | "boldColor" | "highlightColor", unknown>>) => {
     if (!ready || !values) return;
     void settings.save({ ...values, ...patch } as typeof values, settings.revision);
   };
@@ -101,6 +101,13 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
         </View>
       </SettingsSection>
       <SettingsSection title="线程回收" info="btw 线程是同一会话的连续多轮问答">
+        <SettingsSwitch
+          label="线程挂靠主会话"
+          hint="开启后旁路线程作为主会话的 subagent 存活，随主会话归档，插件重载后可继续追问；关闭则插件重载时回收线程"
+          value={values?.attachToMain ?? true}
+          onValueChange={(value) => save({ attachToMain: value })}
+          disabled={!ready}
+        />
         <SettingsSwitch
           label="闲置后自动归档线程"
           hint="关闭时线程一直保留，直到清除记录或重载插件"

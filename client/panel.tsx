@@ -2,7 +2,7 @@ import type { PluginAgentPanelProps } from "@getpaseo/plugin/client";
 import { useAgent, usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { btwAsk, btwClear, btwStatus, type BtwQuestion } from "../shared/contracts";
+import { btwAsk, btwClear, btwStatus, type BtwMode, type BtwQuestion } from "../shared/contracts";
 import { MarkdownView } from "./markdown";
 
 interface ModelOption {
@@ -33,6 +33,7 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [askMode, setAskMode] = useState<BtwMode>("advice");
   const [now, setNow] = useState(() => Date.now());
   const scrollRef = useRef<ScrollView>(null);
 
@@ -120,6 +121,12 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
         marginTop: 10,
         textAlign: "center" as const,
       },
+      metaRow: {
+        flexDirection: "row" as const,
+        alignItems: "center" as const,
+        justifyContent: "space-between" as const,
+      },
+      openThreadText: { color: theme.colors.accent, fontSize: layout.compact ? 10 : 11 },
       footer: { borderTopWidth: 1, borderColor: theme.colors.border, paddingHorizontal: pad, paddingTop: 8, paddingBottom: 10, gap: 6 },
       modelRow: {
         flexDirection: "row" as const,
@@ -170,6 +177,17 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
         paddingVertical: 8,
       },
       clearButtonText: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 12 : 13 },
+      modeSwitch: {
+        flexDirection: "row" as const,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        overflow: "hidden" as const,
+      },
+      modeOption: { paddingHorizontal: 10, paddingVertical: 7 },
+      modeOptionActive: { backgroundColor: theme.colors.accent },
+      modeOptionText: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 12 : 13 },
+      modeOptionTextActive: { color: theme.colors.accentForeground, fontWeight: "700" as const },
     };
   }, [theme, layout.compact]);
 
@@ -179,13 +197,13 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
     setInput("");
     setAskError(null);
     try {
-      await askRpc({ agentId, question, model: selectedModel ?? undefined });
+      await askRpc({ agentId, question, model: selectedModel ?? undefined, mode: askMode });
       await refresh();
     } catch (error) {
       setAskError(error instanceof Error ? error.message : String(error));
       setInput(question);
     }
-  }, [input, askRpc, agentId, selectedModel, refresh]);
+  }, [input, askRpc, agentId, selectedModel, askMode, refresh]);
 
   const clear = useCallback(async () => {
     setAskError(null);
@@ -227,7 +245,7 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
         {questions.length === 0 ? (
           <Text style={styles.statusText}>
             {
-              "在主 agent 干活时，把旁路问题丢到这里。\n追问会继续同一个 btw 会话；Clear 结束当前线程。\n回答基于主会话上下文，但不会写进主会话。"
+              "在主 agent 干活时，把旁路问题丢到这里。\nbtw 模式只出主意；干活模式可用工具，/side 直通；/fork 克隆会话平行探索。\n追问继续同一线程；回答不会写进主会话。"
             }
           </Text>
         ) : (
@@ -251,10 +269,26 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
               {question.answer.length > 0 ? (
                 <MarkdownView markdown={question.answer} theme={theme} compact={layout.compact} />
               ) : null}
-              <Text style={styles.metaText}>
-                {question.model ?? "?"}
-                {question.elapsedMs != null ? ` · ${(question.elapsedMs / 1000).toFixed(1)}s` : ""}
-              </Text>
+              <View style={styles.metaRow}>
+                <Text style={styles.metaText}>
+                  {question.mode === "work" ? "🔧 干活 · " : ""}
+                  {question.model ?? "?"}
+                  {question.elapsedMs != null ? ` · ${(question.elapsedMs / 1000).toFixed(1)}s` : ""}
+                </Text>
+                {question.threadId && navigation ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="在标签页打开该旁路会话"
+                    onPress={() => {
+                      if (question.threadId) {
+                        navigation.openAgent({ agentId: question.threadId });
+                      }
+                    }}
+                  >
+                    <Text style={styles.openThreadText}>在标签页查看 ↗</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           ))
         )}
@@ -271,6 +305,28 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
             <Text style={styles.modelButtonText}>模型：{selectedModelLabel}</Text>
             <Text style={styles.modelCaret}>{modelPickerOpen ? "▲" : "▼"}</Text>
           </Pressable>
+          <View style={styles.modeSwitch}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="btw 模式：只出主意，不使用工具"
+              style={[styles.modeOption, askMode === "advice" && styles.modeOptionActive]}
+              onPress={() => setAskMode("advice")}
+            >
+              <Text style={[styles.modeOptionText, askMode === "advice" && styles.modeOptionTextActive]}>
+                btw
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="干活模式：跟随主会话模式，可使用工具"
+              style={[styles.modeOption, askMode === "work" && styles.modeOptionActive]}
+              onPress={() => setAskMode("work")}
+            >
+              <Text style={[styles.modeOptionText, askMode === "work" && styles.modeOptionTextActive]}>
+                干活
+              </Text>
+            </Pressable>
+          </View>
           <Pressable accessibilityRole="button" accessibilityLabel="清空问答记录" style={styles.clearButton} onPress={() => void clear()}>
             <Text style={styles.clearButtonText}>Clear</Text>
           </Pressable>

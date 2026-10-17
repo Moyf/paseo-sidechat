@@ -28,6 +28,21 @@ export default function contribute(client: PluginClientContext) {
     },
   });
 
+  client.addSlashCommand({
+    name: "side",
+    description: "旁路干活：基于当前会话上下文，可使用工具完成小任务，不发送给主 agent",
+    argumentHint: "<task>",
+    context: "agent",
+    async onSubmit({ args, agent, rpc, openPanel }) {
+      const question = args.trim();
+      if (!question) {
+        throw new Error("用法：/side <任务或问题>");
+      }
+      await rpc(btwAsk, { agentId: agent.id, question, mode: "work" });
+      openPanel("btw", { location: "explorer" });
+    },
+  });
+
   client.addCommandCenterItem({
     id: "open-btw",
     title: "打开 btw 旁路问答面板",

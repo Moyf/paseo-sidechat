@@ -3,12 +3,16 @@ import { z } from "zod";
 
 export const btwQuestionStatusSchema = z.enum(["pending", "running", "done", "error"]);
 
+export const btwModeSchema = z.enum(["advice", "work"]);
+export type BtwMode = z.infer<typeof btwModeSchema>;
+
 export const btwAsk = defineRpc({
   name: "btw.ask",
   input: z.object({
     agentId: z.string().min(1),
     question: z.string().trim().min(1).max(8000),
     model: z.string().min(1).max(200).optional(),
+    mode: btwModeSchema.optional(),
   }),
   output: z.object({ questionId: z.string() }),
 });
@@ -17,6 +21,7 @@ export const btwQuestionSchema = z.object({
   id: z.string(),
   agentId: z.string(),
   threadId: z.string().nullable(),
+  mode: btwModeSchema.default("advice"),
   question: z.string(),
   status: btwQuestionStatusSchema,
   answer: z.string(),
