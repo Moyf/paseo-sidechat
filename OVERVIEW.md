@@ -41,4 +41,4 @@ The main agent never receives a message, and nothing is appended to its timeline
 
 - Up to three side questions can run at the same time; each answer has a four minute timeout.
 - Context is capped both by message count (settings) and total characters; tool calls and reasoning items are not included.
-- The last 50 questions per agent are kept.
+- The last 50 questions are kept overall, across all sessions.
