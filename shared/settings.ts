@@ -22,20 +22,3 @@ export const btwSettingsDefinition = defineSettings({
 });
 
 export type BtwSettings = z.infer<typeof btwSettingsDefinition.schema>;
-
-export function colorModeLabel(mode: ColorMode): string {
-  switch (mode) {
-    case "default":
-      return "跟随主题";
-    case "accent":
-      return "强调色";
-    case "muted":
-      return "弱化色";
-    case "success":
-      return "成功绿";
-    case "warning":
-      return "警示黄";
-    case "danger":
-      return "危险红";
-  }
-}

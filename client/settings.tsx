@@ -3,22 +3,13 @@ import { useSettings } from "@getpaseo/plugin/client";
 import { SettingsInput, SettingsSection, SettingsSelect, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
-import { btwSettingsDefinition, colorModeLabel, colorModeSchema, type ColorMode } from "../shared/settings";
+import { t } from "./i18n";
+import { btwSettingsDefinition, colorModeSchema, type ColorMode } from "../shared/settings";
 import { MarkdownView } from "./markdown";
 
-const COLOR_MODE_OPTIONS = (
-  colorModeSchema.options as readonly ColorMode[]
-).map((mode) => ({ label: colorModeLabel(mode), value: mode }));
+const COLOR_MODES: readonly ColorMode[] = ["default", "accent", "muted", "success", "warning", "danger"];
 
-const PREVIEW_MARKDOWN = [
-  "### 标题样式",
-  "正文里可以有**加粗文字**、==高亮文字==和`行内代码`。",
-  "- 列表项带**加粗**",
-  "- 列表项带==高亮==",
-  "| 表格 | 也支持 |",
-  "|---|---|",
-  "| 单元格内**加粗** | 单元格内==高亮== |",
-].join("\n");
+const PREVIEW_MARKDOWN = t.previewMarkdown;
 
 export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
   const settings = useSettings(btwSettingsDefinition);
@@ -30,13 +21,11 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
   const ready = settings.status === "ready";
 
   useEffect(() => {
-    if (ready && values && idleText === null) {
-      setIdleText(String(values.idleMinutes));
+    if (ready && values) {
+      setIdleText((current) => current ?? String(values.idleMinutes));
+      setContextText((current) => current ?? String(values.contextMessages));
     }
-    if (ready && values && contextText === null) {
-      setContextText(String(values.contextMessages));
-    }
-  }, [ready, values, idleText, contextText]);
+  }, [ready, values]);
 
   const styles = useMemo(
     () => ({
@@ -59,85 +48,76 @@ export function BtwSettingsScreen({ theme, layout }: PluginSurfaceProps) {
     [theme, layout.compact],
   );
 
-  const save = (patch: Partial<Record<"autoArchive" | "idleMinutes" | "contextMessages" | "attachToMain" | "headingColor" | "boldColor" | "highlightColor" | "highlightBgColor", unknown>>) => {
+  const save = (patch: Partial<Record<"autoArchive" | "idleMinutes" | "contextMessages" | "attachToMain" | "headingColor" | "boldColor" | "highlightColor", unknown>>) => {
     if (!ready || !values) return;
     void settings.save({ ...values, ...patch } as typeof values, settings.revision);
   };
 
-  const scheduleIdleSave = (text: string) => {
+  const scheduleIntSave = (field: "idleMinutes" | "contextMessages", text: string, max: number) => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const parsed = Number.parseInt(text, 10);
     if (!Number.isFinite(parsed)) return;
-    const clamped = Math.min(1440, Math.max(1, parsed));
-    saveTimer.current = setTimeout(() => save({ idleMinutes: clamped }), 600);
+    const clamped = Math.min(max, Math.max(1, parsed));
+    saveTimer.current = setTimeout(() => save({ [field]: clamped }), 600);
   };
 
-  const scheduleContextSave = (text: string) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    const parsed = Number.parseInt(text, 10);
-    if (!Number.isFinite(parsed)) return;
-    const clamped = Math.min(50, Math.max(1, parsed));
-    saveTimer.current = setTimeout(() => save({ contextMessages: clamped }), 600);
-  };
-
-  const colorSelect = (label: string, field: "headingColor" | "boldColor" | "highlightColor" | "highlightBgColor") => (
+  const colorSelect = (label: string, field: "headingColor" | "boldColor" | "highlightColor") => (
     <SettingsSelect
       label={label}
       value={values?.[field] ?? "default"}
-      options={COLOR_MODE_OPTIONS}
-      onValueChange={(value) => save({ [field]: value as ColorMode })}
+      options={COLOR_MODES.map((mode) => ({ label: t.colorModes[mode], value: mode }))}
+      onValueChange={(value) => save({ [field]: value })}
       disabled={!ready}
     />
   );
 
   return (
     <View style={styles.screen}>
-      <SettingsSection title="回答外观" info="只影响 btw 面板里的回答渲染，实时生效">
-        {colorSelect("标题颜色", "headingColor")}
-        {colorSelect("加粗颜色", "boldColor")}
-        {colorSelect("高亮颜色", "highlightColor")}
-        {colorSelect("高亮背景色", "highlightBgColor")}
+      <SettingsSection title={t.appearanceSection} info={t.appearanceInfo}>
+        {colorSelect(t.headingColor, "headingColor")}
+        {colorSelect(t.boldColor, "boldColor")}
+        {colorSelect(t.highlightColor, "highlightColor")}
         <View>
-          <Text style={styles.previewLabel}>预览</Text>
+          <Text style={styles.previewLabel}>{t.preview}</Text>
           <View style={styles.preview}>
             <MarkdownView markdown={PREVIEW_MARKDOWN} theme={theme} compact={layout.compact} />
           </View>
         </View>
       </SettingsSection>
-      <SettingsSection title="线程回收" info="btw 线程是同一会话的连续多轮问答">
+      <SettingsSection title={t.lifecycleSection} info={t.lifecycleInfo}>
         <SettingsSwitch
-          label="线程挂靠主会话"
-          hint="开启后旁路线程作为主会话的 subagent 存活，随主会话归档，插件重载后可继续追问；关闭则插件重载时回收线程"
+          label={t.attachSwitch}
+          hint={t.attachHint}
           value={values?.attachToMain ?? true}
           onValueChange={(value) => save({ attachToMain: value })}
           disabled={!ready}
         />
         <SettingsSwitch
-          label="闲置后自动归档线程"
-          hint="关闭时线程一直保留，直到清除记录或重载插件"
+          label={t.autoArchiveSwitch}
+          hint={t.autoArchiveHint}
           value={values?.autoArchive ?? false}
           onValueChange={(value) => save({ autoArchive: value })}
           disabled={!ready}
         />
         <SettingsInput
-          label="闲置回收时长（分钟）"
-          hint="1 到 1440 之间的整数"
+          label={t.idleMinutesLabel}
+          hint={t.idleMinutesHint}
           initialValue={idleText ?? ""}
           onChangeText={(text) => {
             setIdleText(text);
-            scheduleIdleSave(text);
+            scheduleIntSave("idleMinutes", text, 1440);
           }}
           disabled={!ready || !(values?.autoArchive ?? false)}
         />
       </SettingsSection>
-      <SettingsSection title="主会话上下文" info="新线程会读取主会话最近的对话作为背景">
+      <SettingsSection title={t.contextSection} info={t.contextInfo}>
         <SettingsInput
-          label="上下文消息条数"
-          hint="1 到 50 之间的整数，默认 8；超长消息另有 12000 字符总量上限"
+          label={t.contextMessagesLabel}
+          hint={t.contextMessagesHint("1 - 50")}
           initialValue={contextText ?? ""}
           onChangeText={(text) => {
             setContextText(text);
-            scheduleContextSave(text);
+            scheduleIntSave("contextMessages", text, 50);
           }}
           disabled={!ready}
         />

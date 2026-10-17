@@ -3,6 +3,7 @@ import { useAgent, usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { btwAsk, btwClear, btwStatus, type BtwMode, type BtwQuestion } from "../shared/contracts";
+import { t } from "./i18n";
 import { MarkdownView } from "./markdown";
 
 interface ModelOption {
@@ -32,17 +33,29 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
   const [askError, setAskError] = useState<string | null>(null);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [modelQuery, setModelQuery] = useState("");
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [askMode, setAskMode] = useState<BtwMode>("advice");
+  const [replyTarget, setReplyTarget] = useState<string | null>(null);
+  const [openThreads, setOpenThreads] = useState<Array<{ id: string; mode: BtwMode; model: string | null; firstQuestion: string }>>([]);
   const [now, setNow] = useState(() => Date.now());
   const scrollRef = useRef<ScrollView>(null);
 
   const hasActive = questions.some((q) => q.status === "pending" || q.status === "running");
 
+  const filteredModels = useMemo(() => {
+    const query = modelQuery.trim().toLowerCase();
+    if (!query) return models;
+    return models.filter(
+      (model) => model.label.toLowerCase().includes(query) || model.id.toLowerCase().includes(query),
+    );
+  }, [models, modelQuery]);
+
   const refresh = useCallback(async () => {
     try {
       const result = await statusRpc({ agentId });
       setQuestions(result.questions);
+      setOpenThreads(result.openThreads);
     } catch {
       // daemon or plugin restarting; the next poll retries
     }
@@ -59,6 +72,12 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [hasActive]);
+
+  useEffect(() => {
+    if (replyTarget && !openThreads.some((thread) => thread.id === replyTarget)) {
+      setReplyTarget(null);
+    }
+  }, [openThreads, replyTarget]);
 
   useEffect(() => {
     const provider = agent?.provider;
@@ -127,11 +146,47 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
         justifyContent: "space-between" as const,
       },
       openThreadText: { color: theme.colors.accent, fontSize: layout.compact ? 10 : 11 },
-      footer: { borderTopWidth: 1, borderColor: theme.colors.border, paddingHorizontal: pad, paddingTop: 8, paddingBottom: 10, gap: 6 },
-      modelRow: {
+      replyActiveText: { fontWeight: "700" as const },
+      metaActions: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10 },
+      headerTarget: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 10 : 11 },
+      headerTargetActive: { color: theme.colors.accent, fontSize: layout.compact ? 10 : 11 },
+      targetRow: {
         flexDirection: "row" as const,
         alignItems: "center" as const,
         justifyContent: "space-between" as const,
+        gap: 8,
+      },
+      targetChip: {
+        flexShrink: 1,
+        minWidth: 0,
+        borderRadius: 7,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+      },
+      footer: { borderTopWidth: 1, borderColor: theme.colors.border, paddingHorizontal: pad, paddingTop: 8, paddingBottom: 10, gap: 6 },
+      liveStrip: {
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        borderRadius: 8,
+        backgroundColor: theme.colors.surface1,
+        padding: 8,
+        gap: 3,
+      },
+      liveQuestion: {
+        color: theme.colors.foregroundMuted,
+        fontSize: layout.compact ? 11 : 12,
+        fontWeight: "700" as const,
+      },
+      liveAnswer: { color: theme.colors.foreground, fontSize: layout.compact ? 12 : 13 },
+      liveStatus: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 11 : 12 },
+      modelRow: {
+        flexDirection: "row" as const,
+        flexWrap: "wrap" as const,
+        alignItems: "center" as const,
+        justifyContent: "space-between" as const,
+        gap: 8,
       },
       modelButton: {
         flexDirection: "row" as const,
@@ -141,13 +196,54 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
         paddingHorizontal: 8,
         borderRadius: 6,
         backgroundColor: theme.colors.surface1,
+        flexShrink: 1,
+        minWidth: 0,
       },
       modelButtonText: { color: theme.colors.foreground, fontSize: layout.compact ? 11 : 12 },
+      modelValueText: { flexShrink: 1 },
       modelCaret: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 11 : 12 },
-      modelList: { maxHeight: 160, borderRadius: 8, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface1 },
+      pickerAnchor: { position: "relative" as const },
+      modelPopover: {
+        position: "absolute" as const,
+        left: 0,
+        right: 0,
+        bottom: "100%" as const,
+        marginBottom: 6,
+        maxHeight: 250,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface0,
+        padding: 6,
+        gap: 6,
+        zIndex: 20,
+        elevation: 8,
+        shadowColor: "#000",
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+      },
+      backdrop: { position: "absolute" as const, top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 },
+      modelList: { maxHeight: 180 },
       modelOption: { paddingHorizontal: 10, paddingVertical: 8, borderBottomWidth: 1, borderColor: theme.colors.border },
       modelOptionText: { color: theme.colors.foreground, fontSize: layout.compact ? 12 : 13 },
       modelOptionSub: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 10 : 11 },
+      modelSearch: {
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+        backgroundColor: theme.colors.surface1,
+        color: theme.colors.foreground,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        fontSize: layout.compact ? 12 : 13,
+      },
+      modelNoResults: {
+        color: theme.colors.foregroundMuted,
+        fontSize: layout.compact ? 11 : 12,
+        padding: 10,
+        textAlign: "center" as const,
+      },
       inputRow: { flexDirection: "row" as const, alignItems: "flex-end" as const, gap: 8 },
       input: {
         flex: 1,
@@ -170,23 +266,25 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
       },
       sendButtonText: { color: theme.colors.accentForeground, fontSize: layout.compact ? 13 : 14, fontWeight: "700" as const },
       clearButton: {
-        borderRadius: 8,
+        borderRadius: 7,
         borderWidth: 1,
         borderColor: theme.colors.border,
-        paddingHorizontal: 10,
-        paddingVertical: 8,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        flexShrink: 0,
       },
-      clearButtonText: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 12 : 13 },
+      clearButtonText: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 11 : 12 },
       modeSwitch: {
         flexDirection: "row" as const,
         borderRadius: 8,
         borderWidth: 1,
         borderColor: theme.colors.border,
         overflow: "hidden" as const,
+        flexShrink: 0,
       },
-      modeOption: { paddingHorizontal: 10, paddingVertical: 7 },
+      modeOption: { paddingHorizontal: 7, paddingVertical: 4 },
       modeOptionActive: { backgroundColor: theme.colors.accent },
-      modeOptionText: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 12 : 13 },
+      modeOptionText: { color: theme.colors.foregroundMuted, fontSize: layout.compact ? 11 : 12 },
       modeOptionTextActive: { color: theme.colors.accentForeground, fontWeight: "700" as const },
     };
   }, [theme, layout.compact]);
@@ -197,41 +295,77 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
     setInput("");
     setAskError(null);
     try {
-      await askRpc({ agentId, question, model: selectedModel ?? undefined, mode: askMode });
+      await askRpc({
+        agentId,
+        question,
+        model: selectedModel ?? undefined,
+        mode: askMode,
+        threadId: replyTarget ?? undefined,
+      });
       await refresh();
     } catch (error) {
       setAskError(error instanceof Error ? error.message : String(error));
       setInput(question);
     }
-  }, [input, askRpc, agentId, selectedModel, askMode, refresh]);
+  }, [input, askRpc, agentId, selectedModel, askMode, replyTarget, refresh]);
 
   const clear = useCallback(async () => {
+    const targetThreadId =
+      replyTarget ?? openThreads.find((thread) => thread.mode === askMode)?.id ?? null;
+    if (!targetThreadId) return;
     setAskError(null);
+    if (replyTarget === targetThreadId) setReplyTarget(null);
     try {
-      await clearRpc({ agentId });
+      await clearRpc({ agentId, threadId: targetThreadId });
       await refresh();
     } catch (error) {
       setAskError(error instanceof Error ? error.message : String(error));
     }
-  }, [clearRpc, agentId, refresh]);
+  }, [clearRpc, agentId, refresh, replyTarget, askMode, openThreads]);
 
   const agentTitle = agent?.title ?? agentId;
   const providerLabel = agent ? `${agent.provider}${agent.model ? ` / ${agent.model}` : ""}` : "";
+  const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
+  const lane = openThreads.find((thread) => thread.mode === askMode);
+  const activeQuestion = [...questions]
+    .reverse()
+    .find((q) => q.status === "pending" || q.status === "running");
+  // target/active reflect the thread's latest turn so shared-thread rows stay consistent
+  const replyTargetEntry = replyTarget
+    ? [...questions].reverse().find((q) => q.threadId === replyTarget)
+    : null;
+  const replyActiveId = replyTargetEntry?.id ?? null;
+  // thread action buttons render only on each thread's latest turn
+  const lastIdByThread = new Map<string, string>();
+  for (const q of questions) {
+    if (q.threadId) lastIdByThread.set(q.threadId, q.id);
+  }
+  const pickedModel = selectedModel ?? agent?.model ?? "";
+  let targetLine: string;
+  if (replyTarget) {
+    targetLine = t.targetReply(clip(replyTargetEntry?.question ?? "", 26));
+  } else if (!lane) {
+    targetLine = t.targetNew;
+  } else if ((lane.model ?? "") !== pickedModel) {
+    targetLine = t.targetNewModel;
+  } else {
+    targetLine = t.targetContinue(clip(lane.firstQuestion, 26));
+  }
   const selectedModelLabel = selectedModel
     ? (models.find((m) => m.id === selectedModel)?.label ?? selectedModel)
-    : agent?.model ?? "默认模型";
+    : agent?.model ?? t.sessionDefault;
 
   return (
     <View style={styles.screen}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`打开所属会话 ${agentTitle}`}
+        accessibilityLabel={t.openMainA11y(agentTitle)}
         disabled={!navigation}
         onPress={() => navigation?.openAgent({ agentId })}
         style={styles.header}
       >
         <Text style={styles.headerTitle}>
-          btw · {agentTitle}
+          {t.headerPrefix} · {agentTitle}
           {navigation ? " ↗" : ""}
         </Text>
         <Text style={styles.headerSubtitle}>{providerLabel || "…"}</Text>
@@ -244,9 +378,7 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
       >
         {questions.length === 0 ? (
           <Text style={styles.statusText}>
-            {
-              "在主 agent 干活时，把旁路问题丢到这里。\nbtw 模式只出主意；干活模式可用工具，/side 直通；/fork 克隆会话平行探索。\n追问继续同一线程；回答不会写进主会话。"
-            }
+            {t.emptyState}
           </Text>
         ) : (
           questions.map((question, index) => (
@@ -254,39 +386,60 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
               {index > 0 &&
               question.threadId &&
               questions[index - 1].threadId !== question.threadId ? (
-                <Text style={styles.threadDivider}>— 新会话线程 —</Text>
+                <Text style={styles.threadDivider}>{t.threadDivider}</Text>
               ) : null}
               <Text style={styles.questionText}>{question.question}</Text>
               {question.status === "pending" ? (
-                <Text style={styles.statusText}>排队中…</Text>
+                <Text style={styles.statusText}>{t.queued}</Text>
               ) : question.status === "running" ? (
                 <Text style={styles.statusText}>
-                  思考中… 已等待 {formatElapsed(question.startedAt, question.finishedAt, now)} 秒
+                  {t.thinking(formatElapsed(question.startedAt, question.finishedAt, now))}
                 </Text>
               ) : question.status === "error" ? (
-                <Text style={styles.errorText}>出错：{question.error ?? "未知错误"}</Text>
+                <Text style={styles.errorText}>{t.errorPrefix}{question.error ?? "?"}</Text>
               ) : null}
               {question.answer.length > 0 ? (
                 <MarkdownView markdown={question.answer} theme={theme} compact={layout.compact} />
               ) : null}
               <View style={styles.metaRow}>
                 <Text style={styles.metaText}>
-                  {question.mode === "work" ? "🔧 干活 · " : ""}
+                  {question.mode === "work" ? `${t.workBadge} · ` : ""}
                   {question.model ?? "?"}
                   {question.elapsedMs != null ? ` · ${(question.elapsedMs / 1000).toFixed(1)}s` : ""}
                 </Text>
-                {question.threadId && navigation ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="在标签页打开该旁路会话"
-                    onPress={() => {
-                      if (question.threadId) {
-                        navigation.openAgent({ agentId: question.threadId });
-                      }
-                    }}
-                  >
-                    <Text style={styles.openThreadText}>在标签页查看 ↗</Text>
-                  </Pressable>
+                {question.threadId && lastIdByThread.get(question.threadId) === question.id ? (
+                  <View style={styles.metaActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t.replyA11y}
+                      onPress={() => {
+                        setReplyTarget(question.threadId ?? null);
+                        setAskMode(question.mode);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.openThreadText,
+                          replyActiveId === question.id && styles.replyActiveText,
+                        ]}
+                      >
+                        {replyActiveId === question.id ? t.replyActive : t.reply}
+                      </Text>
+                    </Pressable>
+                    {navigation ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={t.openThreadA11y}
+                        onPress={() => {
+                          if (question.threadId) {
+                            navigation.openAgent({ agentId: question.threadId });
+                          }
+                        }}
+                      >
+                        <Text style={styles.openThreadText}>{t.openThread}</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 ) : null}
               </View>
             </View>
@@ -295,86 +448,53 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
       </ScrollView>
 
       <View style={styles.footer}>
-        <View style={styles.modelRow}>
+        {activeQuestion ? (
+          <View style={styles.liveStrip}>
+            <Text style={styles.liveQuestion} numberOfLines={1}>
+              {clip(activeQuestion.question, 80)}
+            </Text>
+            {activeQuestion.answer.trim().length > 0 ? (
+              <Text style={styles.liveAnswer} numberOfLines={3}>
+                {activeQuestion.answer}
+              </Text>
+            ) : (
+              <Text style={styles.liveStatus}>
+                {activeQuestion.status === "pending"
+                  ? t.queued
+                  : t.thinking(formatElapsed(activeQuestion.startedAt, activeQuestion.finishedAt, now))}
+              </Text>
+            )}
+          </View>
+        ) : null}
+        <View style={styles.targetRow}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="选择模型"
-            style={styles.modelButton}
-            onPress={() => setModelPickerOpen((open) => !open)}
+            accessibilityLabel={t.targetResetA11y}
+            disabled={!replyTarget}
+            onPress={() => setReplyTarget(null)}
+            style={styles.targetChip}
           >
-            <Text style={styles.modelButtonText}>模型：{selectedModelLabel}</Text>
-            <Text style={styles.modelCaret}>{modelPickerOpen ? "▲" : "▼"}</Text>
+            <Text numberOfLines={1} style={replyTarget ? styles.headerTargetActive : styles.headerTarget}>
+              {targetLine}
+              {replyTarget ? " ✕" : ""}
+            </Text>
           </Pressable>
-          <View style={styles.modeSwitch}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="btw 模式：只出主意，不使用工具"
-              style={[styles.modeOption, askMode === "advice" && styles.modeOptionActive]}
-              onPress={() => setAskMode("advice")}
-            >
-              <Text style={[styles.modeOptionText, askMode === "advice" && styles.modeOptionTextActive]}>
-                btw
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="干活模式：跟随主会话模式，可使用工具"
-              style={[styles.modeOption, askMode === "work" && styles.modeOptionActive]}
-              onPress={() => setAskMode("work")}
-            >
-              <Text style={[styles.modeOptionText, askMode === "work" && styles.modeOptionTextActive]}>
-                干活
-              </Text>
-            </Pressable>
-          </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="清空问答记录" style={styles.clearButton} onPress={() => void clear()}>
-            <Text style={styles.clearButtonText}>Clear</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t.clearA11y}
+            style={styles.clearButton}
+            disabled={!replyTarget && !openThreads.some((thread) => thread.mode === askMode)}
+            onPress={() => void clear()}
+          >
+            <Text style={styles.clearButtonText}>{t.clear}</Text>
           </Pressable>
         </View>
-
-        {modelPickerOpen ? (
-          <ScrollView style={styles.modelList} nestedScrollEnabled>
-            <Pressable
-              accessibilityRole="button"
-              style={styles.modelOption}
-              onPress={() => {
-                setSelectedModel(null);
-                setModelPickerOpen(false);
-              }}
-            >
-              <Text style={styles.modelOptionText}>
-                {selectedModel === null ? "✓ " : ""}
-                跟随主会话{agent?.model ? `（${agent.model}）` : ""}
-              </Text>
-            </Pressable>
-            {models.map((model) => (
-              <Pressable
-                key={model.id}
-                accessibilityRole="button"
-                style={styles.modelOption}
-                onPress={() => {
-                  setSelectedModel(model.id);
-                  setModelPickerOpen(false);
-                }}
-              >
-                <Text style={styles.modelOptionText}>
-                  {selectedModel === model.id ? "✓ " : ""}
-                  {model.label}
-                </Text>
-                <Text style={styles.modelOptionSub}>{model.id}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        ) : null}
-
-        {askError ? <Text style={styles.errorText}>{askError}</Text> : null}
-
         <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder="顺便问点什么…"
+            placeholder={t.inputPlaceholder}
             placeholderTextColor={theme.colors.foregroundMuted}
             multiline
             editable={!hasActive}
@@ -389,15 +509,126 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="发送旁路问题"
+            accessibilityLabel={t.sendA11y}
             style={styles.sendButton}
             disabled={hasActive || input.trim().length === 0}
             onPress={() => void submit()}
           >
-            <Text style={styles.sendButtonText}>{hasActive ? "回答中" : "提问"}</Text>
+            <Text style={styles.sendButtonText}>{hasActive ? t.sending : t.send}</Text>
           </Pressable>
         </View>
+
+        <View style={styles.pickerAnchor}>
+          <View style={styles.modelRow}>
+          <View style={styles.modeSwitch}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t.modeAskA11y}
+              style={[styles.modeOption, askMode === "advice" && styles.modeOptionActive]}
+              onPress={() => setAskMode("advice")}
+            >
+              <Text style={[styles.modeOptionText, askMode === "advice" && styles.modeOptionTextActive]}>
+                {t.modeAsk}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t.modeWorkA11y}
+              style={[styles.modeOption, askMode === "work" && styles.modeOptionActive]}
+              onPress={() => setAskMode("work")}
+            >
+              <Text style={[styles.modeOptionText, askMode === "work" && styles.modeOptionTextActive]}>
+                {t.modeWork}
+              </Text>
+            </Pressable>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t.modelLabel.trim()}
+            style={styles.modelButton}
+            onPress={() => {
+              if (!modelPickerOpen) setModelQuery("");
+              setModelPickerOpen(!modelPickerOpen);
+            }}
+          >
+            <Text style={styles.modelButtonText}>{t.modelLabel}</Text>
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="middle"
+              style={[styles.modelButtonText, styles.modelValueText]}
+            >
+              {selectedModelLabel}
+            </Text>
+            <Text style={styles.modelCaret}>{modelPickerOpen ? "▲" : "▼"}</Text>
+          </Pressable>
+          </View>
+
+          {modelPickerOpen ? (
+            <View style={styles.modelPopover}>
+            <TextInput
+              style={styles.modelSearch}
+              value={modelQuery}
+              onChangeText={setModelQuery}
+              placeholder={t.modelSearchPlaceholder}
+              placeholderTextColor={theme.colors.foregroundMuted}
+              autoCorrect={false}
+              autoCapitalize="none"
+              autoFocus
+            />
+            <ScrollView
+              style={styles.modelList}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+            >
+              <Pressable
+                accessibilityRole="button"
+                style={styles.modelOption}
+                onPress={() => {
+                  setSelectedModel(null);
+                  setModelPickerOpen(false);
+                }}
+              >
+                <Text style={styles.modelOptionText}>
+                  {selectedModel === null ? "✓ " : ""}
+                  {t.followMain(agent?.model ?? "")}
+                </Text>
+              </Pressable>
+              {filteredModels.map((model) => (
+                <Pressable
+                  key={model.id}
+                  accessibilityRole="button"
+                  style={styles.modelOption}
+                  onPress={() => {
+                    setSelectedModel(model.id);
+                    setModelPickerOpen(false);
+                  }}
+                >
+                  <Text style={styles.modelOptionText}>
+                    {selectedModel === model.id ? "✓ " : ""}
+                    {model.label}
+                  </Text>
+                  <Text style={styles.modelOptionSub}>{model.id}</Text>
+                </Pressable>
+              ))}
+              {filteredModels.length === 0 ? (
+                <Text style={styles.modelNoResults}>{t.modelNoResults}</Text>
+              ) : null}
+            </ScrollView>
+            </View>
+          ) : null}
+        </View>
+
+        {askError ? <Text style={styles.errorText}>{askError}</Text> : null}
       </View>
+
+      {modelPickerOpen ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t.modelDismissA11y}
+          style={styles.backdrop}
+          onPress={() => setModelPickerOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
