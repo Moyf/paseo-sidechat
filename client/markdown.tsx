@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { Text, View } from "react-native";
+import { Text, View, type TextStyle } from "react-native";
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useSettings } from "@getpaseo/plugin/client";
 import { btwSettingsDefinition, type ColorMode } from "../shared/settings";
@@ -14,22 +14,42 @@ type Block =
   | { kind: "ol"; items: string[] }
   | { kind: "table"; header: string[]; rows: string[][]; align: Array<"left" | "center" | "right"> };
 
-const INLINE_PATTERN = /(\*\*[^*]+\*\*|==[^=]+==|`[^`]+`)/g;
+const INLINE_PATTERN = /(\*\*[^*]+\*\*|==[^=]+==|`[^`]+`)/;
 
-function parseInline(text: string): Segment[] {
-  const parts = text.split(INLINE_PATTERN).filter((part) => part.length > 0);
-  return parts.map((part) => {
-    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
-      return { text: part.slice(2, -2), bold: true, code: false, highlight: false };
+function mergeAdjacent(segments: Segment[]): Segment[] {
+  const out: Segment[] = [];
+  for (const segment of segments) {
+    const last = out[out.length - 1];
+    if (last && last.bold === segment.bold && last.code === segment.code && last.highlight === segment.highlight) {
+      last.text += segment.text;
+      continue;
     }
-    if (part.startsWith("==") && part.endsWith("==") && part.length > 4) {
-      return { text: part.slice(2, -2), bold: false, code: false, highlight: true };
-    }
-    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
-      return { text: part.slice(1, -1), bold: false, code: true, highlight: false };
-    }
-    return { text: part, bold: false, code: false, highlight: false };
-  });
+    if (segment.text.length > 0) out.push(segment);
+  }
+  return out;
+}
+
+/** Recursive so markers nest: `**bold ==highlight==**` yields bold+highlight segments. */
+function parseInline(text: string, bold = false, code = false, highlight = false): Segment[] {
+  const match = INLINE_PATTERN.exec(text);
+  if (!match) {
+    return text.length > 0 ? [{ text, bold, code, highlight }] : [];
+  }
+  const segments: Segment[] = [];
+  if (match.index > 0) {
+    segments.push({ text: text.slice(0, match.index), bold, code, highlight });
+  }
+  const token = match[0];
+  if (token.startsWith("`")) {
+    // code spans stay literal; outer styles still apply
+    segments.push({ text: token.slice(1, -1), bold, code: true, highlight });
+  } else if (token.startsWith("**")) {
+    segments.push(...parseInline(token.slice(2, -2), true, code, highlight));
+  } else {
+    segments.push(...parseInline(token.slice(2, -2), bold, code, true));
+  }
+  segments.push(...parseInline(text.slice(match.index + token.length), bold, code, highlight));
+  return mergeAdjacent(segments);
 }
 
 function withAlpha(hex: string | undefined, alpha: number, fallback: string): string {
@@ -201,25 +221,26 @@ function InlineText({
   surface: string;
 }) {
   const segments = useMemo(() => parseInline(text), [text]);
+  const segmentStyle = (segment: Segment): TextStyle => {
+    const style: TextStyle = { ...baseStyle };
+    if (segment.bold) {
+      style.fontWeight = "700";
+      if (boldColor) style.color = boldColor;
+    }
+    if (segment.code) {
+      style.fontFamily = "monospace";
+      style.color = baseStyle.color;
+    }
+    if (segment.highlight) {
+      style.color = highlightColor;
+      style.backgroundColor = withAlpha(highlightBgColor, 0.22, surface);
+    }
+    return style;
+  };
   return (
     <Text>
       {segments.map((segment, index) => (
-        <Text
-          key={index}
-          style={
-            segment.highlight
-              ? {
-                  ...baseStyle,
-                  color: highlightColor,
-                  backgroundColor: withAlpha(highlightBgColor, 0.22, surface),
-                }
-              : segment.code
-                ? { ...baseStyle, fontFamily: "monospace", color: baseStyle.color }
-                : segment.bold
-                  ? { ...baseStyle, color: boldColor ?? baseStyle.color, fontWeight: "700" as const }
-                  : baseStyle
-          }
-        >
+        <Text key={index} style={segmentStyle(segment)}>
           {segment.text}
         </Text>
       ))}
@@ -307,7 +328,14 @@ export function MarkdownView({ markdown, theme, compact }: { markdown: string; t
                 : styles.h4;
         return (
           <Text key={index} style={headingStyle}>
-            {block.text}
+            <InlineText
+              text={block.text}
+              baseStyle={headingStyle}
+              boldColor={boldColor}
+              highlightColor={highlightColor}
+              highlightBgColor={highlightBgColor}
+              surface={theme.colors.surface1}
+            />
           </Text>
         );
       }
