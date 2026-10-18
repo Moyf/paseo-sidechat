@@ -6,6 +6,6 @@
     "paseo": ">=0.11.2"
   },
   "description": "Side chats for agent sessions: /btw asks, /side works, /fork clones. Answers never touch the main session.",
-  "name": "侧聊 Side Chat",
+  "name": "Side Chat",
   "media": ["assets/screenshot.png"]
 }
