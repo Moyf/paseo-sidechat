@@ -2,6 +2,7 @@ import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { QuestionEntry, ThreadState } from "./store";
 import {
   closeThread,
+  getQuestionEntry,
   getThread,
   getThreadById,
   knownThreadIds,
@@ -57,19 +58,29 @@ function truncateQuestion(question: string): string {
 
 async function pollAnswer(handle: AgentHandle, entry: QuestionEntry): Promise<void> {
   try {
-    const page = await handle.timeline.refetch({ direction: "tail", limit: 40 });
+    const page = await handle.timeline.refetch({ direction: "tail", limit: 60 });
+    const items = page.entries.map((timelineEntry) => timelineEntry.item);
+    // attribute assistant text to this question: everything after its own user
+    // message, stopping at the next one (a steered question takes over there)
+    let anchor = -1;
+    for (let i = 0; i < items.length; i += 1) {
+      const item = items[i];
+      if (item.type === "user_message" && item.text === entry.question) anchor = i;
+    }
+    if (anchor === -1) {
+      // startThread wraps the question in a bigger prompt; fall back to the last user message
+      for (let i = items.length - 1; i >= 0; i -= 1) {
+        if (items[i].type === "user_message") {
+          anchor = i;
+          break;
+        }
+      }
+    }
     const texts: string[] = [];
-    let collecting = false;
-    for (const timelineEntry of page.entries) {
-      if (timelineEntry.item.type === "user_message") {
-        // restart at every user message: only text after the latest one belongs to this turn
-        collecting = true;
-        texts.length = 0;
-        continue;
-      }
-      if (collecting && timelineEntry.item.type === "assistant_message") {
-        texts.push(timelineEntry.item.text);
-      }
+    for (let i = anchor + 1; i < items.length; i += 1) {
+      const item = items[i];
+      if (item.type === "user_message") break;
+      if (item.type === "assistant_message") texts.push(item.text);
     }
     entry.answer = texts.join("\n\n");
   } catch {
@@ -153,27 +164,32 @@ async function runQuestion(entry: QuestionEntry, paseo: PaseoApi): Promise<void>
       if (!thread) {
         throw new Error("目标会话已结束，请取消回复锁定或重新提问");
       }
-      if (thread.busy) {
-        throw new Error("目标会话正在回答中，请稍候");
-      }
       entry.mode = thread.mode;
       entry.model = thread.model || null;
-      await continueThread(paseo, thread, entry);
+      if (thread.busy) {
+        await steerThread(paseo, thread, entry);
+      } else {
+        await continueThread(paseo, thread, entry);
+      }
     } else {
       const existing = getThread(entry.agentId, entry.mode);
-      const reusable =
-        existing &&
-        !existing.busy &&
-        existing.provider === provider &&
-        existing.model === (model || "");
-      if (reusable && existing) {
-        await continueThread(paseo, existing, entry);
+      if (existing && existing.busy) {
+        // a turn is running: steer the side agent instead of queueing
+        await steerThread(paseo, existing, entry);
       } else {
-        if (existing) {
-          closeThread(entry.agentId, entry.mode);
-          await archiveTemp(paseo, existing.id);
+        const reusable =
+          existing &&
+          existing.provider === provider &&
+          existing.model === (model || "");
+        if (existing && reusable) {
+          await continueThread(paseo, existing, entry);
+        } else {
+          if (existing) {
+            closeThread(entry.agentId, entry.mode);
+            await archiveTemp(paseo, existing.id);
+          }
+          await startThread(paseo, main.workspaceId, provider, model, main.currentModeId ?? null, entry);
         }
-        await startThread(paseo, main.workspaceId, provider, model, main.currentModeId ?? null, entry);
       }
     }
   } catch (error) {
@@ -196,6 +212,7 @@ async function runQuestion(entry: QuestionEntry, paseo: PaseoApi): Promise<void>
 /** Follow-up: the thread's temp agent keeps its own Q&A history, so just send the new question. */
 async function continueThread(paseo: PaseoApi, thread: ThreadState, entry: QuestionEntry): Promise<void> {
   thread.busy = true;
+  thread.turnEntryId = entry.id;
   if (thread.archiveTimer) {
     clearTimeout(thread.archiveTimer);
     thread.archiveTimer = null;
@@ -206,6 +223,58 @@ async function continueThread(paseo: PaseoApi, thread: ThreadState, entry: Quest
   try {
     console.log(`[btw] follow-up ${entry.id} in thread ${thread.id}`);
     await settleTurn(handle.run(entry.question, { timeoutMs: ANSWER_TIMEOUT_MS }), handle, entry);
+  } catch (error) {
+    // the temp agent may be gone (archived by user, closed with daemon, ...)
+    entry.status = "error";
+    entry.error = error instanceof Error ? error.message : String(error);
+    closeThread(thread.agentId, thread.mode);
+    await archiveTemp(paseo, thread.id);
+  } finally {
+    thread.busy = false;
+    scheduleSave();
+  }
+  if (entry.status === "error") {
+    return;
+  }
+  scheduleIdleArchive(thread, paseo);
+}
+
+/**
+ * Mid-turn follow-up: steer the running side agent instead of queueing.
+ * The question that owned the turn freezes with the answer generated so far;
+ * the new question takes over and resolves when the extended turn finishes.
+ */
+async function steerThread(paseo: PaseoApi, thread: ThreadState, entry: QuestionEntry): Promise<void> {
+  const owner = thread.turnEntryId ? getQuestionEntry(thread.turnEntryId) : undefined;
+  if (owner && (owner.status === "running" || owner.status === "pending")) {
+    owner.status = "done";
+    owner.finishedAt = Date.now();
+    owner.elapsedMs = owner.finishedAt - owner.startedAt;
+    scheduleSave();
+  }
+  if (thread.archiveTimer) {
+    clearTimeout(thread.archiveTimer);
+    thread.archiveTimer = null;
+  }
+  entry.threadId = thread.id;
+  entry.tempAgentId = thread.id;
+  thread.turnEntryId = entry.id;
+  const handle = paseo.agents.ref(thread.id);
+  try {
+    console.log(`[btw] steer ${entry.id} into thread ${thread.id}`);
+    await handle.send(entry.question, { activeTurnBehavior: "steer" });
+  } catch (error) {
+    entry.status = "error";
+    entry.error = error instanceof Error ? error.message : String(error);
+    closeThread(thread.agentId, thread.mode);
+    await archiveTemp(paseo, thread.id);
+    scheduleSave();
+    return;
+  }
+  entry.status = "running";
+  scheduleSave();
+  try {
+    await settleTurn(handle.waitForFinish(ANSWER_TIMEOUT_MS), handle, entry);
   } catch (error) {
     // the temp agent may be gone (archived by user, closed with daemon, ...)
     entry.status = "error";
@@ -257,6 +326,7 @@ async function startThread(
     mode: entry.mode,
     firstQuestion: entry.question,
     busy: true,
+    turnEntryId: entry.id,
     archiveTimer: null,
   };
   setThread(thread);

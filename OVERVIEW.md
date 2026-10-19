@@ -16,6 +16,8 @@ A question is handled entirely by the plugin's daemon-side code:
 
 Follow-up questions continue the same temporary agent, so each thread keeps its own Q&A history. Threads persist to disk and survive plugin and daemon reloads; threads can also attach to the main session and archive with it (plugin setting, on by default). Idle auto-archiving is optional and off by default.
 
+While an answer is still being generated, sending another question steers the running side agent (Paseo's native steering) instead of queueing: the earlier answer freezes as generated so far, and the new question takes over the turn.
+
 The main agent never receives a message, and nothing is appended to its timeline. Questions, answers and side-thread identities are stored locally under `~/.paseo/plugin-data/paseo-sidechat/`. Prompt context (recent main-session messages) is sent to the side agent's provider, the same way the main session's own messages are.
 
 ## The panel

@@ -506,7 +506,6 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
             placeholder={t.inputPlaceholder}
             placeholderTextColor={theme.colors.foregroundMuted}
             multiline
-            editable={!hasActive}
             onKeyPress={(event) => {
               const nativeEvent = event.nativeEvent as { key?: string; isComposing?: boolean };
               if (nativeEvent.key !== "Enter" || nativeEvent.isComposing) return;
@@ -520,10 +519,10 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
             accessibilityRole="button"
             accessibilityLabel={t.sendA11y}
             style={styles.sendButton}
-            disabled={hasActive || input.trim().length === 0}
+            disabled={input.trim().length === 0}
             onPress={() => void submit()}
           >
-            <Text style={styles.sendButtonText}>{hasActive ? t.sending : t.send}</Text>
+            <Text style={styles.sendButtonText}>{hasActive ? t.steer : t.send}</Text>
           </Pressable>
         </View>
 

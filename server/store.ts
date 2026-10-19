@@ -15,6 +15,8 @@ export interface ThreadState {
   mode: BtwMode;
   firstQuestion: string;
   busy: boolean;
+  /** The question that currently owns the running turn; null when idle. In-memory only. */
+  turnEntryId: string | null;
   archiveTimer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -79,6 +81,7 @@ export function ensureLoaded(): Promise<void> {
         mode,
         firstQuestion: t.firstQuestion,
         busy: false,
+        turnEntryId: null,
         archiveTimer: null,
       });
     }
@@ -204,6 +207,10 @@ export function listQuestionsForAgent(agentId: string): QuestionEntry[] {
     if (entry) entries.push(entry);
   }
   return entries;
+}
+
+export function getQuestionEntry(id: string): QuestionEntry | undefined {
+  return questions.get(id);
 }
 
 /** Removes one thread's finished questions and returns the count. */
