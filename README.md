@@ -1,5 +1,7 @@
 # paseo-sidechat
 
+<img src="assets/icon.png" alt="Side Chat icon" width="128" height="128" />
+
 Paseo plugin: `/btw <question>` — ask a side question from the context of the current agent session, answered in its own panel while the agent keeps working. Nothing is written to the main session.
 
 ## Usage
