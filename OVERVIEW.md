@@ -26,7 +26,8 @@ The main agent never receives a message, and nothing is appended to its timeline
 - Archive: retires the current thread's agent and removes its Q&A from the panel. Other threads are untouched.
 - Model picker with text search; defaults to the model the session currently uses. Switching models starts a new thread on the next question.
 - Live strip above the input shows the running question's streaming answer.
-- Interface text follows the system language (Chinese or English). Answer appearance (heading, bold and highlight colors) is configurable in the plugin settings.
+- The reply lock, model pick and ask/work mode survive app reloads with the tab.
+- Interface text follows the app language (English or Simplified Chinese) and updates live when the language changes. Answer appearance (heading, bold and highlight colors) is configurable in the plugin settings.
 
 ## Settings
 
@@ -36,7 +37,7 @@ The main agent never receives a message, and nothing is appended to its timeline
 
 ## Requirements
 
-- Paseo 0.11.2 or later on the daemon.
+- Paseo 0.14.0 or later on the daemon.
 - Any provider configured in Paseo. The plugin needs no API keys or accounts; it reuses the daemon's provider setup.
 
 ## Known limits

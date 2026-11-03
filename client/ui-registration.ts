@@ -1,32 +1,23 @@
 import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { btwAsk } from "../shared/contracts";
-import { dictionaries, getLang, type Lang } from "./i18n";
+import { messages } from "./messages";
 import { BtwPanel } from "./panel";
 import { BtwSettingsScreen } from "./settings";
 
 /**
- * Workspace-panel titles and command descriptions are written once at
- * registration time, so language-bound contributions are disposed and
- * re-registered whenever the interface language setting changes.
+ * Registers every client contribution. Persistent labels use message
+ * references, so the host resolves them in the app's language and re-renders
+ * them live when the language changes — no re-registration needed. Transient
+ * text inside callbacks resolves through context.i18n.t at invocation time.
  */
-
-let client: PluginClientContext | null = null;
-let cleanups: Array<() => void> = [];
-let lang: Lang = getLang();
-
-function rebind(): void {
-  for (const dispose of cleanups) dispose();
-  cleanups = [];
-  const context = client;
-  if (!context) return;
-  const t = dictionaries[lang];
+export function registerUi(context: PluginClientContext): () => void {
+  const cleanups: Array<() => void> = [];
 
   cleanups.push(
-    context.addWorkspacePanel({
+    context.addAgentPanel({
       id: "sidechat",
-      title: t.panelTitle,
+      title: messages.message("panel.title"),
       icon: "MessageCircleQuestion",
-      context: "agent",
       locations: ["explorer"],
       Component: BtwPanel,
     }),
@@ -35,13 +26,13 @@ function rebind(): void {
   cleanups.push(
     context.addSlashCommand({
       name: "btw",
-      description: t.descBtw,
+      description: messages.message("commands.btwDescription"),
       argumentHint: "<question>",
       context: "agent",
       async onSubmit({ args, agent, rpc, openPanel }) {
         const question = args.trim();
         if (!question) {
-          throw new Error(t.usageBtw);
+          throw new Error(context.i18n.t(messages, "commands.btwUsage"));
         }
         await rpc(btwAsk, { agentId: agent.id, question });
         openPanel("sidechat", { location: "explorer" });
@@ -52,13 +43,13 @@ function rebind(): void {
   cleanups.push(
     context.addSlashCommand({
       name: "side",
-      description: t.descSide,
+      description: messages.message("commands.sideDescription"),
       argumentHint: "<task>",
       context: "agent",
       async onSubmit({ args, agent, rpc, openPanel }) {
         const question = args.trim();
         if (!question) {
-          throw new Error(t.usageSide);
+          throw new Error(context.i18n.t(messages, "commands.sideUsage"));
         }
         await rpc(btwAsk, { agentId: agent.id, question, mode: "work" });
         openPanel("sidechat", { location: "explorer" });
@@ -69,14 +60,14 @@ function rebind(): void {
   cleanups.push(
     context.addSlashCommand({
       name: "fork",
-      description: t.descFork,
+      description: messages.message("commands.forkDescription"),
       argumentHint: "[first prompt]",
       context: "agent",
       async onSubmit({ args, agent, paseo }) {
         const page = await paseo.agents
           .ref(agent.id)
           .timeline.refetch({ direction: "tail", limit: 200, projection: "canonical" });
-        const lines: string[] = [t.forkIntro(agent.title ?? agent.id)];
+        const lines: string[] = [context.i18n.t(messages, "commands.forkIntro", { title: agent.title ?? agent.id })];
         for (const entry of page.entries) {
           const item = entry.item;
           if (item.type === "user_message") {
@@ -95,7 +86,7 @@ function rebind(): void {
             {
               type: "text",
               mimeType: "text/plain",
-              title: t.forkTranscriptTitle(agent.title ?? agent.id),
+              title: context.i18n.t(messages, "commands.forkTranscriptTitle", { title: agent.title ?? agent.id }),
               text: lines.join("\n\n"),
             },
           ],
@@ -107,7 +98,7 @@ function rebind(): void {
   cleanups.push(
     context.addCommandCenterItem({
       id: "open-btw",
-      title: t.openPanelCommand,
+      title: messages.message("commands.openPanel"),
       icon: "MessageCircleQuestion",
       keywords: ["btw", "side", "sidechat", "ask", "旁路", "侧聊"],
       context: "agent",
@@ -120,7 +111,7 @@ function rebind(): void {
   cleanups.push(
     context.addCommandCenterItem({
       id: "open-btw-settings",
-      title: t.openSettingsCommand,
+      title: messages.message("commands.openSettings"),
       icon: "Settings2",
       keywords: ["btw", "sidechat", "settings", "设置", "回收"],
       context: "global",
@@ -133,28 +124,13 @@ function rebind(): void {
   cleanups.push(
     context.addSettingsScreen({
       id: "settings",
-      title: t.panelTitle,
+      title: messages.message("panel.title"),
       icon: "Settings2",
       Component: BtwSettingsScreen,
     }),
   );
-}
 
-/** Registers every language-bound client contribution. */
-export function registerUi(context: PluginClientContext): () => void {
-  client = context;
-  lang = getLang();
-  rebind();
   return () => {
     for (const dispose of cleanups) dispose();
-    cleanups = [];
-    client = null;
   };
-}
-
-/** Re-registers language-bound contributions after the language setting changes. */
-export function applyUiLanguage(next: Lang): void {
-  if (!client || next === lang) return;
-  lang = next;
-  rebind();
 }

@@ -29,5 +29,5 @@ paseo plugin logs paseo-sidechat
 
 ## Requirements
 
-- Paseo >= 0.11.2.
+- Paseo >= 0.14.0.
 - Works with any provider configured in the daemon; no extra credentials.

@@ -76,7 +76,8 @@ export default function contribute(server: PluginServerContext) {
 
   server.handle(btwAsk, (input, { paseo }) => {
     if (runningCount() >= MAX_RUNNING) {
-      throw new Error("已有太多侧聊问题在回答中，请稍后再问");
+      // language-neutral code; the panel translates it for display
+      throw new Error("SIDECHAT_TOO_MANY_RUNNING");
     }
     const entry = addQuestion(
       input.agentId,

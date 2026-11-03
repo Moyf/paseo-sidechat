@@ -7,9 +7,8 @@ export type ColorMode = z.infer<typeof colorModeSchema>;
 export const btwSettingsDefinition = defineSettings({
   id: "btw-settings",
   scope: "host",
-  version: 6,
+  version: 7,
   schema: z.object({
-    language: z.enum(["auto", "zh", "en"]).default("auto"),
     autoArchive: z.boolean().default(false),
     idleMinutes: z.number().int().min(1).max(1440).default(10),
     contextMessages: z.number().int().min(1).max(50).default(8),
@@ -19,7 +18,14 @@ export const btwSettingsDefinition = defineSettings({
     highlightColor: colorModeSchema.default("default"),
     highlightBgColor: colorModeSchema.default("accent"),
   }),
-  migrate: (values) => values,
+  // v7 dropped the plugin-managed language override; UI text now follows the app language
+  migrate: (values) => {
+    if (typeof values === "object" && values !== null && "language" in values) {
+      const { language: _dropped, ...rest } = values as Record<string, unknown>;
+      return rest;
+    }
+    return values;
+  },
 });
 
 export type BtwSettings = z.infer<typeof btwSettingsDefinition.schema>;

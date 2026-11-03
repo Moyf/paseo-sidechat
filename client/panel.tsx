@@ -1,11 +1,10 @@
 import type { PluginAgentPanelProps } from "@getpaseo/plugin/client";
-import { useAgent, usePaseo, useRpc, useSettings } from "@getpaseo/plugin/client";
+import { useAgent, usePaseo, useRpc, useTabState, useTranslation } from "@getpaseo/plugin/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
-import { btwAsk, btwClear, btwStatus, type BtwMode, type BtwQuestion } from "../shared/contracts";
-import { btwSettingsDefinition } from "../shared/settings";
-import { dictionaries, resolveLang } from "./i18n";
-import { applyUiLanguage } from "./ui-registration";
+import { z } from "zod";
+import { btwAsk, btwClear, btwStatus, btwModeSchema, type BtwMode, type BtwQuestion } from "../shared/contracts";
+import { messages } from "./messages";
 import { MarkdownView } from "./markdown";
 
 interface ModelOption {
@@ -13,23 +12,33 @@ interface ModelOption {
   label: string;
 }
 
+/** Per-tab panel state that survives reloads: reply lock, picked model, mode. */
+const panelStateSchema = z.object({
+  replyTarget: z.string().nullable(),
+  selectedModel: z.string().nullable(),
+  askMode: btwModeSchema,
+});
+
+type PanelState = z.infer<typeof panelStateSchema>;
+
+const PANEL_STATE_DEFAULT: PanelState = {
+  replyTarget: null,
+  selectedModel: null,
+  askMode: "advice",
+};
+
 function formatElapsed(startedAt: number, finishedAt: number | null, now: number): number {
   const end = finishedAt ?? now;
   return Math.max(0, Math.floor((end - startedAt) / 1000));
 }
 
-export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPanelProps) {
+export function BtwPanel({ theme, layout, params, navigation, tab }: PluginAgentPanelProps) {
+  const agentId = params.agentId;
   const paseo = usePaseo();
   const askRpc = useRpc(btwAsk);
   const statusRpc = useRpc(btwStatus);
   const clearRpc = useRpc(btwClear);
-  const settingsState = useSettings(btwSettingsDefinition);
-  const uiLang = resolveLang(settingsState.status === "ready" ? settingsState.values.language : null);
-  const t = dictionaries[uiLang];
-
-  useEffect(() => {
-    applyUiLanguage(uiLang);
-  }, [uiLang]);
+  const { t, locale } = useTranslation(messages);
 
   const agent = useAgent(agentId, (value) => ({
     title: value.title,
@@ -43,12 +52,12 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelQuery, setModelQuery] = useState("");
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
-  const [askMode, setAskMode] = useState<BtwMode>("advice");
-  const [replyTarget, setReplyTarget] = useState<string | null>(null);
   const [openThreads, setOpenThreads] = useState<Array<{ id: string; mode: BtwMode; model: string | null; firstQuestion: string }>>([]);
   const [now, setNow] = useState(() => Date.now());
   const scrollRef = useRef<ScrollView>(null);
+
+  const [tabState, setTabState] = useTabState(tab, panelStateSchema, PANEL_STATE_DEFAULT);
+  const { replyTarget, selectedModel, askMode } = tabState;
 
   const hasActive = questions.some((q) => q.status === "pending" || q.status === "running");
 
@@ -84,9 +93,9 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
 
   useEffect(() => {
     if (replyTarget && !openThreads.some((thread) => thread.id === replyTarget)) {
-      setReplyTarget(null);
+      setTabState({ ...tabState, replyTarget: null });
     }
-  }, [openThreads, replyTarget]);
+  }, [openThreads, replyTarget, tabState, setTabState]);
 
   useEffect(() => {
     const provider = agent?.provider;
@@ -298,6 +307,39 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
     };
   }, [theme, layout.compact]);
 
+  /**
+   * The daemon raises language-neutral SIDECHAT_* error codes (optionally
+   * `CODE::detail`); translate them here and pass other errors through.
+   */
+  const describeError = useCallback(
+    (raw: string): string => {
+      const idx = raw.indexOf("::");
+      const code = idx === -1 ? raw : raw.slice(0, idx);
+      const detail = idx === -1 ? "" : raw.slice(idx + 2);
+      switch (code) {
+        case "SIDECHAT_TOO_MANY_RUNNING":
+          return t("errors.tooManyRunning");
+        case "SIDECHAT_MAIN_GONE":
+          return t("errors.mainGone");
+        case "SIDECHAT_NO_WORKSPACE":
+          return t("errors.noWorkspace");
+        case "SIDECHAT_THREAD_GONE":
+          return t("errors.threadGone");
+        case "SIDECHAT_PERMISSION_WORK":
+          return t("errors.permissionWork");
+        case "SIDECHAT_PERMISSION_ADVICE":
+          return t("errors.permissionAdvice");
+        case "SIDECHAT_TIMEOUT":
+          return t("errors.timeout");
+        case "SIDECHAT_ABNORMAL_END":
+          return t("errors.abnormalEnd", { detail });
+        default:
+          return raw;
+      }
+    },
+    [t],
+  );
+
   const submit = useCallback(async () => {
     const question = input.trim();
     if (!question) return;
@@ -323,14 +365,14 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
       replyTarget ?? openThreads.find((thread) => thread.mode === askMode)?.id ?? null;
     if (!targetThreadId) return;
     setAskError(null);
-    if (replyTarget === targetThreadId) setReplyTarget(null);
+    if (replyTarget === targetThreadId) setTabState({ ...tabState, replyTarget: null });
     try {
       await clearRpc({ agentId, threadId: targetThreadId });
       await refresh();
     } catch (error) {
       setAskError(error instanceof Error ? error.message : String(error));
     }
-  }, [clearRpc, agentId, refresh, replyTarget, askMode, openThreads]);
+  }, [clearRpc, agentId, refresh, replyTarget, askMode, openThreads, tabState, setTabState]);
 
   const agentTitle = agent?.title ?? agentId;
   const providerLabel = agent ? `${agent.provider}${agent.model ? ` / ${agent.model}` : ""}` : "";
@@ -352,29 +394,34 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
   const pickedModel = selectedModel ?? agent?.model ?? "";
   let targetLine: string;
   if (replyTarget) {
-    targetLine = t.targetReply(clip(replyTargetEntry?.question ?? "", 26));
+    targetLine = t("panel.targetReply", { question: clip(replyTargetEntry?.question ?? "", 26) });
   } else if (!lane) {
-    targetLine = t.targetNew;
+    targetLine = t("panel.targetNew");
   } else if ((lane.model ?? "") !== pickedModel) {
-    targetLine = t.targetNewModel;
+    targetLine = t("panel.targetNewModel");
   } else {
-    targetLine = t.targetContinue(clip(lane.firstQuestion, 26));
+    targetLine = t("panel.targetContinue", { question: clip(lane.firstQuestion, 26) });
   }
   const selectedModelLabel = selectedModel
     ? (models.find((m) => m.id === selectedModel)?.label ?? selectedModel)
-    : agent?.model ?? t.sessionDefault;
+    : agent?.model ?? t("panel.sessionDefault");
+  const followMainDetail = agent?.model
+    ? locale.startsWith("zh")
+      ? `（${agent.model}）`
+      : ` (${agent.model})`
+    : "";
 
   return (
     <View style={styles.screen}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={t.openMainA11y(agentTitle)}
+        accessibilityLabel={t("panel.openMainA11y", { title: agentTitle })}
         disabled={!navigation}
         onPress={() => navigation?.openAgent({ agentId })}
         style={styles.header}
       >
         <Text style={styles.headerTitle}>
-          {t.headerPrefix} · {agentTitle}
+          {t("panel.headerPrefix")} · {agentTitle}
           {navigation ? " ↗" : ""}
         </Text>
         <Text style={styles.headerSubtitle}>{providerLabel || "…"}</Text>
@@ -387,7 +434,7 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
       >
         {questions.length === 0 ? (
           <Text style={styles.statusText}>
-            {t.emptyState}
+            {t("panel.emptyState")}
           </Text>
         ) : (
           questions.map((question, index) => (
@@ -395,24 +442,24 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
               {index > 0 &&
               question.threadId &&
               questions[index - 1].threadId !== question.threadId ? (
-                <Text style={styles.threadDivider}>{t.threadDivider}</Text>
+                <Text style={styles.threadDivider}>{t("panel.threadDivider")}</Text>
               ) : null}
               <Text style={styles.questionText}>{question.question}</Text>
               {question.status === "pending" ? (
-                <Text style={styles.statusText}>{t.queued}</Text>
+                <Text style={styles.statusText}>{t("panel.queued")}</Text>
               ) : question.status === "running" ? (
                 <Text style={styles.statusText}>
-                  {t.thinking(formatElapsed(question.startedAt, question.finishedAt, now))}
+                  {t("panel.thinking", { seconds: formatElapsed(question.startedAt, question.finishedAt, now) })}
                 </Text>
               ) : question.status === "error" ? (
-                <Text style={styles.errorText}>{t.errorPrefix}{question.error ?? "?"}</Text>
+                <Text style={styles.errorText}>{t("panel.errorPrefix")}{describeError(question.error ?? "?")}</Text>
               ) : null}
               {question.answer.length > 0 ? (
                 <MarkdownView markdown={question.answer} theme={theme} compact={layout.compact} />
               ) : null}
               <View style={styles.metaRow}>
                 <Text style={styles.metaText}>
-                  {question.mode === "work" ? `${t.workBadge} · ` : ""}
+                  {question.mode === "work" ? `${t("panel.workBadge")} · ` : ""}
                   {question.model ?? "?"}
                   {question.elapsedMs != null ? ` · ${(question.elapsedMs / 1000).toFixed(1)}s` : ""}
                 </Text>
@@ -420,10 +467,13 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
                   <View style={styles.metaActions}>
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={t.replyA11y}
+                      accessibilityLabel={t("panel.replyA11y")}
                       onPress={() => {
-                        setReplyTarget(question.threadId ?? null);
-                        setAskMode(question.mode);
+                        setTabState({
+                          ...tabState,
+                          replyTarget: question.threadId ?? null,
+                          askMode: question.mode,
+                        });
                       }}
                     >
                       <Text
@@ -432,20 +482,20 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
                           replyActiveId === question.id && styles.replyActiveText,
                         ]}
                       >
-                        {replyActiveId === question.id ? t.replyActive : t.reply}
+                        {replyActiveId === question.id ? t("panel.replyActive") : t("panel.reply")}
                       </Text>
                     </Pressable>
                     {navigation ? (
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={t.openThreadA11y}
+                        accessibilityLabel={t("panel.openThreadA11y")}
                         onPress={() => {
                           if (question.threadId) {
                             navigation.openAgent({ agentId: question.threadId });
                           }
                         }}
                       >
-                        <Text style={styles.openThreadText}>{t.openThread}</Text>
+                        <Text style={styles.openThreadText}>{t("panel.openThread")}</Text>
                       </Pressable>
                     ) : null}
                   </View>
@@ -469,8 +519,10 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
             ) : (
               <Text style={styles.liveStatus}>
                 {activeQuestion.status === "pending"
-                  ? t.queued
-                  : t.thinking(formatElapsed(activeQuestion.startedAt, activeQuestion.finishedAt, now))}
+                  ? t("panel.queued")
+                  : t("panel.thinking", {
+                      seconds: formatElapsed(activeQuestion.startedAt, activeQuestion.finishedAt, now),
+                    })}
               </Text>
             )}
           </View>
@@ -478,9 +530,9 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
         <View style={styles.targetRow}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t.targetResetA11y}
+            accessibilityLabel={t("panel.targetResetA11y")}
             disabled={!replyTarget}
-            onPress={() => setReplyTarget(null)}
+            onPress={() => setTabState({ ...tabState, replyTarget: null })}
             style={styles.targetChip}
           >
             <Text numberOfLines={1} style={replyTarget ? styles.headerTargetActive : styles.headerTarget}>
@@ -490,12 +542,12 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t.clearA11y}
+            accessibilityLabel={t("panel.clearA11y")}
             style={styles.clearButton}
             disabled={!replyTarget && !openThreads.some((thread) => thread.mode === askMode)}
             onPress={() => void clear()}
           >
-            <Text style={styles.clearButtonText}>{t.clear}</Text>
+            <Text style={styles.clearButtonText}>{t("panel.clear")}</Text>
           </Pressable>
         </View>
         <View style={styles.inputRow}>
@@ -503,7 +555,7 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder={t.inputPlaceholder}
+            placeholder={t("panel.inputPlaceholder")}
             placeholderTextColor={theme.colors.foregroundMuted}
             multiline
             onKeyPress={(event) => {
@@ -517,12 +569,12 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t.sendA11y}
+            accessibilityLabel={t("panel.sendA11y")}
             style={styles.sendButton}
             disabled={input.trim().length === 0}
             onPress={() => void submit()}
           >
-            <Text style={styles.sendButtonText}>{hasActive ? t.steer : t.send}</Text>
+            <Text style={styles.sendButtonText}>{hasActive ? t("panel.steer") : t("panel.send")}</Text>
           </Pressable>
         </View>
 
@@ -531,35 +583,35 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
           <View style={styles.modeSwitch}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t.modeAskA11y}
+              accessibilityLabel={t("panel.modeAskA11y")}
               style={[styles.modeOption, askMode === "advice" && styles.modeOptionActive]}
-              onPress={() => setAskMode("advice")}
+              onPress={() => setTabState({ ...tabState, askMode: "advice" })}
             >
               <Text style={[styles.modeOptionText, askMode === "advice" && styles.modeOptionTextActive]}>
-                {t.modeAsk}
+                {t("panel.modeAsk")}
               </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={t.modeWorkA11y}
+              accessibilityLabel={t("panel.modeWorkA11y")}
               style={[styles.modeOption, askMode === "work" && styles.modeOptionActive]}
-              onPress={() => setAskMode("work")}
+              onPress={() => setTabState({ ...tabState, askMode: "work" })}
             >
               <Text style={[styles.modeOptionText, askMode === "work" && styles.modeOptionTextActive]}>
-                {t.modeWork}
+                {t("panel.modeWork")}
               </Text>
             </Pressable>
           </View>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t.modelLabel.trim()}
+            accessibilityLabel={t("panel.modelLabel").trim()}
             style={styles.modelButton}
             onPress={() => {
               if (!modelPickerOpen) setModelQuery("");
               setModelPickerOpen(!modelPickerOpen);
             }}
           >
-            <Text style={styles.modelButtonText}>{t.modelLabel}</Text>
+            <Text style={styles.modelButtonText}>{t("panel.modelLabel")}</Text>
             <Text
               numberOfLines={1}
               ellipsizeMode="middle"
@@ -577,7 +629,7 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
               style={styles.modelSearch}
               value={modelQuery}
               onChangeText={setModelQuery}
-              placeholder={t.modelSearchPlaceholder}
+              placeholder={t("panel.modelSearchPlaceholder")}
               placeholderTextColor={theme.colors.foregroundMuted}
               autoCorrect={false}
               autoCapitalize="none"
@@ -592,13 +644,13 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
                 accessibilityRole="button"
                 style={styles.modelOption}
                 onPress={() => {
-                  setSelectedModel(null);
+                  setTabState({ ...tabState, selectedModel: null });
                   setModelPickerOpen(false);
                 }}
               >
                 <Text style={styles.modelOptionText}>
                   {selectedModel === null ? "✓ " : ""}
-                  {t.followMain(agent?.model ?? "")}
+                  {t("panel.followMain", { detail: followMainDetail })}
                 </Text>
               </Pressable>
               {filteredModels.map((model) => (
@@ -607,7 +659,7 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
                   accessibilityRole="button"
                   style={styles.modelOption}
                   onPress={() => {
-                    setSelectedModel(model.id);
+                    setTabState({ ...tabState, selectedModel: model.id });
                     setModelPickerOpen(false);
                   }}
                 >
@@ -619,20 +671,20 @@ export function BtwPanel({ theme, layout, agentId, navigation }: PluginAgentPane
                 </Pressable>
               ))}
               {filteredModels.length === 0 ? (
-                <Text style={styles.modelNoResults}>{t.modelNoResults}</Text>
+                <Text style={styles.modelNoResults}>{t("panel.modelNoResults")}</Text>
               ) : null}
             </ScrollView>
             </View>
           ) : null}
         </View>
 
-        {askError ? <Text style={styles.errorText}>{askError}</Text> : null}
+        {askError ? <Text style={styles.errorText}>{describeError(askError)}</Text> : null}
       </View>
 
       {modelPickerOpen ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={t.modelDismissA11y}
+          accessibilityLabel={t("panel.modelDismissA11y")}
           style={styles.backdrop}
           onPress={() => setModelPickerOpen(false)}
         />

@@ -149,11 +149,11 @@ async function runQuestion(entry: QuestionEntry, paseo: PaseoApi): Promise<void>
   try {
     const mainRef = await paseo.agents.ref(entry.agentId).refresh();
     if (!mainRef) {
-      throw new Error("主会话不存在或已不可用");
+      throw new Error("SIDECHAT_MAIN_GONE");
     }
     const main = mainRef.agent;
     if (!main.workspaceId) {
-      throw new Error("主会话没有所属 workspace，无法创建旁路会话");
+      throw new Error("SIDECHAT_NO_WORKSPACE");
     }
     const provider = main.provider;
     const model = entry.requestedModel ?? main.model ?? "";
@@ -162,7 +162,7 @@ async function runQuestion(entry: QuestionEntry, paseo: PaseoApi): Promise<void>
     if (entry.threadTarget) {
       const thread = getThreadById(entry.agentId, entry.threadTarget);
       if (!thread) {
-        throw new Error("目标会话已结束，请取消回复锁定或重新提问");
+        throw new Error("SIDECHAT_THREAD_GONE");
       }
       entry.mode = thread.mode;
       entry.model = thread.model || null;
@@ -363,16 +363,14 @@ async function settleTurn(turn: Promise<TurnResult>, handle: AgentHandle, entry:
     entry.status = "done";
   } else if (result.status === "permission") {
     entry.status = "error";
-    entry.error =
-      entry.mode === "work"
-        ? "旁路会话在等待权限确认，请在 Paseo 中找到该会话处理权限请求后重试"
-        : "旁路会话在等待权限确认（它被要求不使用工具），已放弃";
+    // language-neutral codes; the panel translates them for display
+    entry.error = entry.mode === "work" ? "SIDECHAT_PERMISSION_WORK" : "SIDECHAT_PERMISSION_ADVICE";
   } else if (result.status === "timeout") {
     entry.status = "error";
-    entry.error = "回答超时";
+    entry.error = "SIDECHAT_TIMEOUT";
   } else {
     entry.status = "error";
-    entry.error = result.error ?? `旁路会话异常结束（${result.status}）`;
+    entry.error = result.error ?? `SIDECHAT_ABNORMAL_END::${result.status}`;
   }
   scheduleSave();
 }
