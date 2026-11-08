@@ -87,7 +87,7 @@ export default function contribute(server: PluginServerContext) {
       input.threadId ?? null,
     );
     reapOnce(paseo);
-    startQuestion(entry, paseo);
+    startQuestion(entry, paseo, input.locale);
     return { questionId: entry.id };
   });
 
