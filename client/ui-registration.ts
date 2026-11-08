@@ -34,7 +34,7 @@ export function registerUi(context: PluginClientContext): () => void {
         if (!question) {
           throw new Error(context.i18n.t(messages, "commands.btwUsage"));
         }
-        await rpc(btwAsk, { agentId: agent.id, question });
+        await rpc(btwAsk, { agentId: agent.id, question, locale: context.i18n.locale });
         openPanel("sidechat", { location: "explorer" });
       },
     }),
@@ -51,7 +51,7 @@ export function registerUi(context: PluginClientContext): () => void {
         if (!question) {
           throw new Error(context.i18n.t(messages, "commands.sideUsage"));
         }
-        await rpc(btwAsk, { agentId: agent.id, question, mode: "work" });
+        await rpc(btwAsk, { agentId: agent.id, question, mode: "work", locale: context.i18n.locale });
         openPanel("sidechat", { location: "explorer" });
       },
     }),
@@ -71,9 +71,9 @@ export function registerUi(context: PluginClientContext): () => void {
         for (const entry of page.entries) {
           const item = entry.item;
           if (item.type === "user_message") {
-            lines.push(`用户: ${item.text}`);
+            lines.push(`User: ${item.text}`);
           } else if (item.type === "assistant_message") {
-            lines.push(`助手: ${item.text}`);
+            lines.push(`Assistant: ${item.text}`);
           }
         }
         await paseo.workspaces.ref(agent.workspaceId).agents.create({

@@ -352,6 +352,7 @@ export function BtwPanel({ theme, layout, params, navigation, tab }: PluginAgent
         model: selectedModel ?? undefined,
         mode: askMode,
         threadId: replyTarget ?? undefined,
+        locale,
       });
       await refresh();
     } catch (error) {

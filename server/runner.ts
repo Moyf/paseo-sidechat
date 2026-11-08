@@ -10,6 +10,7 @@ import {
   setThread,
 } from "./store";
 import { buildContext, buildPrompt } from "./context";
+import { resolveResponseLanguage } from "./locale";
 
 type PaseoApi = PluginHandlerContext["paseo"];
 type AgentHandle = ReturnType<PaseoApi["agents"]["ref"]>;
@@ -133,9 +134,9 @@ export function reapOnce(paseo: PaseoApi): void {
   void reapStaleThreads(paseo);
 }
 
-export function startQuestion(entry: QuestionEntry, paseo: PaseoApi): void {
+export function startQuestion(entry: QuestionEntry, paseo: PaseoApi, locale?: string): void {
   boundPaseo = paseo;
-  void runQuestion(entry, paseo).catch((error) => {
+  void runQuestion(entry, paseo, locale).catch((error) => {
     console.error("[btw] question runner crashed", entry.id, error);
     entry.status = "error";
     entry.error = error instanceof Error ? error.message : String(error);
@@ -144,7 +145,7 @@ export function startQuestion(entry: QuestionEntry, paseo: PaseoApi): void {
   });
 }
 
-async function runQuestion(entry: QuestionEntry, paseo: PaseoApi): Promise<void> {
+async function runQuestion(entry: QuestionEntry, paseo: PaseoApi, locale?: string): Promise<void> {
   entry.status = "running";
   try {
     const mainRef = await paseo.agents.ref(entry.agentId).refresh();
@@ -188,7 +189,7 @@ async function runQuestion(entry: QuestionEntry, paseo: PaseoApi): Promise<void>
             closeThread(entry.agentId, entry.mode);
             await archiveTemp(paseo, existing.id);
           }
-          await startThread(paseo, main.workspaceId, provider, model, main.currentModeId ?? null, entry);
+          await startThread(paseo, main.workspaceId, provider, model, main.currentModeId ?? null, entry, locale);
         }
       }
     }
@@ -298,10 +299,11 @@ async function startThread(
   model: string,
   mainModeId: string | null,
   entry: QuestionEntry,
+  locale?: string,
 ): Promise<void> {
   const work = entry.mode === "work";
   const context = await buildContext(paseo, entry.agentId, activeSettings.contextMessages);
-  const prompt = buildPrompt(context, entry.question, entry.mode);
+  const prompt = buildPrompt(context, entry.question, entry.mode, resolveResponseLanguage(locale));
   const modeId = work ? mainModeId ?? undefined : await pickPlanMode(paseo, provider);
   const prefix = work ? "[btw·干活]" : "[btw]";
 

@@ -1,5 +1,6 @@
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import type { BtwMode } from "../shared/contracts";
+import type { ResponseLanguage } from "./locale";
 
 type PaseoApi = PluginHandlerContext["paseo"];
 
@@ -25,9 +26,9 @@ export async function buildContext(
     for (const entry of page.entries) {
       const item = entry.item;
       if (item.type === "user_message") {
-        lines.push({ role: "用户", text: item.text });
+        lines.push({ role: "User", text: item.text });
       } else if (item.type === "assistant_message") {
-        lines.push({ role: "助手", text: item.text });
+        lines.push({ role: "Assistant", text: item.text });
       }
     }
     const recent = lines.slice(-Math.max(1, Math.floor(maxMessages))).map((line) => ({
@@ -49,13 +50,14 @@ export async function buildContext(
   }
 }
 
-export function buildPrompt(context: string, question: string, mode: BtwMode): string {
+export function buildPrompt(context: string, question: string, mode: BtwMode, language: ResponseLanguage): string {
+  const answerIn = language.tag === "en" ? language.name : `${language.name} (${language.tag})`;
   const contextBlock = context
-    ? `以下是主会话最近的对话记录，作为回答的背景上下文：\n\n<context>\n${context}\n</context>\n\n`
-    : "（无法读取主会话上下文，请直接根据问题回答。）\n\n";
+    ? `Here is the recent conversation in the main session, as background context for the answer:\n\n<context>\n${context}\n</context>\n\n`
+    : "(The main session's context could not be read; answer from the question alone.)\n\n";
   const requirement =
     mode === "work"
-      ? "- 直接处理这个任务或问题；可以在需要时使用工具，但只做与它直接相关的事，改动保持最小范围。\n- 使用与问题相同的语言，简洁、结构清晰，可以使用 Markdown。"
-      : "- 直接用文字回答这个问题，不要执行任何工具，不要读写文件，不要运行命令。\n- 使用与问题相同的语言回答，简洁、结构清晰，可以使用 Markdown。";
-  return `${contextBlock}用户的旁路问题是：\n\n<question>\n${question}\n</question>\n\n要求：\n${requirement}`;
+      ? `- Do this task or answer this problem directly. You may use tools when needed, but only do what is directly related, and keep changes minimal.\n- Write the answer in ${answerIn}. Keep code, file paths, commands, and quoted text unchanged. Markdown is allowed.`
+      : `- Answer this question in text only. Do not run tools, read or write files, or run commands.\n- Write the answer in ${answerIn}. Keep code, file paths, commands, and quoted text unchanged. Markdown is allowed.`;
+  return `${contextBlock}The user's side-chat question:\n\n<question>\n${question}\n</question>\n\nRequirements:\n${requirement}`;
 }

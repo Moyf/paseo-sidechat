@@ -14,6 +14,8 @@ export const btwAsk = defineRpc({
     model: z.string().min(1).max(200).optional(),
     mode: btwModeSchema.optional(),
     threadId: z.string().min(1).optional(),
+    /** The app's locale (for example `ja`), so the answer uses the reader's language. */
+    locale: z.string().min(1).max(40).optional(),
   }),
   output: z.object({ questionId: z.string() }),
 });
